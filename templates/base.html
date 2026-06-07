@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Bot Admin Panel{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="/templates/css/style.css">
+    <link rel="icon" type="image/x-icon" href="/templates/logo.ico">
+</head>
+<body>
+    <div class="header">
+        <div class="header-top">
+            <div class="logo">
+                <div class="logo-icon">⚡</div>
+                <div class="logo-text">
+                    <h1>AutoBot Panel</h1>
+                    <span>Hệ thống quản lý & tự động phản hồi</span>
+                </div>
+            </div>
+        </div>
+        <nav class="nav">
+            <a href="/admin/pages" class="{% if active_page == 'pages' %}active{% endif %}">
+                📱 Dashboard & Quản lý Pages
+            </a>
+            <a href="/admin/skills" class="{% if active_page == 'skills' %}active{% endif %}">
+                🎯 Quản lý Chuyên môn
+            </a>
+            <a href="/admin/skill-data" class="{% if active_page == 'skill_data' %}active{% endif %}">
+                Dữ liệu chuyên môn
+            </a>
+            <!-- Legacy plates/products menu removed; use /admin/skill-data. -->
+            <span style="display:none">
+                📦 Quản lý Sản phẩm
+            </span>
+            <a href="/admin/message-stats" class="{% if active_page == 'message_stats' %}active{% endif %}">
+                💬 Thống kê Tin nhắn
+            </a>
+            <a href="/admin/api-logs" class="{% if active_page == 'api_logs' %}active{% endif %}">
+                🌐 API Logs
+            </a>
+            <a href="/admin/settings" class="{% if active_page == 'settings' %}active{% endif %}">
+                ⚙️ Cấu hình
+            </a>
+        </nav>
+    </div>
+
+    <div class="container">
+        <div id="alert-container"></div>
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="/templates/js/main.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

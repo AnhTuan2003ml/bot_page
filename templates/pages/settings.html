@@ -1,0 +1,397 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Cấu hình Hệ thống - Bot Admin Panel{% endblock %}
+{% block active_page %}settings{% endblock %}
+
+{% block content %}
+<style>
+.help-section {
+    background: linear-gradient(135deg, var(--gray-100) 0%, var(--gray-50) 100%);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.help-section h3 {
+    color: var(--primary);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.step-list {
+    counter-reset: step;
+    list-style: none;
+    padding: 0;
+}
+
+.step-list li {
+    position: relative;
+    padding-left: 50px;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px dashed var(--gray-200);
+}
+
+.step-list li:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.step-list li::before {
+    counter-increment: step;
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 36px;
+    height: 36px;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.step-title {
+    font-weight: 600;
+    color: var(--gray-800);
+    margin-bottom: 8px;
+    font-size: 15px;
+}
+
+.step-content {
+    color: var(--gray-500);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.step-content code {
+    background: var(--gray-200);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.step-content a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.step-content a:hover {
+    text-decoration: underline;
+}
+
+.config-form {
+    display: grid;
+    gap: 20px;
+}
+
+.config-group {
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    padding: 20px;
+}
+
+.config-group h4 {
+    margin: 0 0 16px 0;
+    color: var(--gray-800);
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.config-field {
+    margin-bottom: 16px;
+}
+
+.config-field:last-child {
+    margin-bottom: 0;
+}
+
+.config-field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--gray-700);
+    margin-bottom: 6px;
+}
+
+.config-field input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    color: var(--gray-800);
+    font-family: monospace;
+    font-size: 13px;
+}
+
+.config-field input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.config-field small {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--gray-500);
+}
+
+.url-display {
+    background: var(--gray-200);
+    padding: 12px;
+    border-radius: var(--radius);
+    font-family: monospace;
+    font-size: 12px;
+    word-break: break-all;
+    margin-top: 8px;
+}
+
+.save-btn {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 20px;
+}
+</style>
+
+<div class="page-header">
+    <h2>⚙️ Cấu hình Hệ thống</h2>
+    <p>Hướng dẫn thiết lập và quản lý cấu hình Facebook App, Webhook</p>
+</div>
+
+<!-- Guide Section -->
+<div class="help-section">
+    <h3>📖 Hướng dẫn tạo Facebook App</h3>
+    <ol class="step-list">
+        <li>
+            <div class="step-title">Bước 1: Truy cập Facebook Developers</div>
+            <div class="step-content">
+                Vào <a href="https://developers.facebook.com/apps/" target="_blank">https://developers.facebook.com/apps/</a> và click <strong>Tạo ứng dụng</strong><br>
+                <img src="{{ url_for('static', filename='imgs/1.jpg') }}" alt="Bước 1" class="guide-img">
+            </div>
+        </li>
+        <li>
+            <div class="step-title">Bước 2: Điền tên ứng dụng</div>
+            <div class="step-content">
+                Nhập tên app (ví dụ: <code>Bot Page Tu Van</code>)<br>
+                <img src="{{ url_for('static', filename='imgs/2.jpg') }}" alt="Bước 2" class="guide-img">
+            </div>
+        </li>
+        <li>
+            <div class="step-title">Bước 3: Chọn loại ứng dụng</div>
+            <div class="step-content">
+                Chọn <strong>Khác</strong> → Click <strong>Tiếp</strong><br>
+                <img src="{{ url_for('static', filename='imgs/3.jpg') }}" alt="Bước 3" class="guide-img">
+            </div>
+        </li>
+        <li>
+            <div class="step-title">Bước 4: Chọn danh mục</div>
+            <div class="step-content">
+                Chọn <strong>Kinh doanh</strong> → Click <strong>Tạo</strong><br>
+                <img src="{{ url_for('static', filename='imgs/4.jpg') }}" alt="Bước 4" class="guide-img">
+            </div>
+        </li>
+        <li>
+            <div class="step-title">Bước 5: Cấu hình thông tin cơ bản</div>
+            <div class="step-content">
+                • Click <strong>Cài đặt ứng dụng</strong> → <strong>Thông tin cơ bản</strong><br>
+                • Dán URL: <code>https://www.google.com/policies/privacy/archive/20010104-20040701/</code> vào <strong>URL chính sách quyền riêng tư</strong><br>
+                • Click <strong>Lưu thay đổi</strong><br>
+                <img src="{{ url_for('static', filename='imgs/5.jpg') }}" alt="Bước 5" class="guide-img">
+            </div>
+        </li>
+        <li>
+            <div class="step-title">Bước 6: Bật chế độ chính thức</div>
+            <div class="step-content">
+                Chuyển toggle sang <strong>Chính thức</strong> (bật app)<br>
+                <img src="{{ url_for('static', filename='imgs/6.jpg') }}" alt="Bước 6" class="guide-img">
+            </div>
+        </li>
+        <li>
+            <div class="step-title">Bước 7: Về bảng điều khiển</div>
+            <div class="step-content">
+                Quay lại <strong>Bảng điều khiển</strong> (Dashboard)<br>
+                <img src="{{ url_for('static', filename='imgs/7.jpg') }}" alt="Bước 7" class="guide-img">
+            </div>
+        </li>
+        <li>
+            <div class="step-title">Bước 8: Cấu hình Webhook cho Page</div>
+            <div class="step-content">
+                • Click <strong>Webhook</strong> trong menu<br>
+                • Chuyển sang tab <strong>Page</strong><br>
+                • <strong>URL gọi lại</strong>: <code id="webhook-url">https://your-domain.com/webhook</code><br>
+                • <strong>Xác minh mã</strong>: <code id="verify-token-display">{{ config.VERIFY_TOKEN }}</code><br>
+                • ✅ Bật <strong>Đính kèm chứng thực máy khách vào yêu cầu Webhook</strong><br>
+                <img src="{{ url_for('static', filename='imgs/8.jpg') }}" alt="Bước 8" class="guide-img">
+            </div>
+        </li>
+        <li>
+            <div class="step-title">Bước 9: Chọn các trường Webhook</div>
+            <div class="step-content">
+                <strong>✅ Bắt buộc bật:</strong><br>
+                • <code>messages</code> → nhận tin nhắn user<br>
+                • <code>messaging_postbacks</code> → user bấm button<br><br>
+                <strong>✅ Nên bật thêm:</strong><br>
+                • <code>message_reads</code> → user đã đọc<br>
+                • <code>message_deliveries</code> → trạng thái gửi<br>
+                • <code>messaging_customer_information</code> → lấy tên/thông tin user (giúp bot xưng hô bằng tên)<br><br>
+                <strong>🔹 Tuỳ chọn nâng cao:</strong><br>
+                • <code>messaging_optins</code> → bắt đầu chat<br>
+                • <code>messaging_referrals</code> → từ ads<br>
+                • <code>message_echoes</code> → echo tin nhắn của bot<br>
+                • <code>message_template_status_update</code> → trạng thái template
+            </div>
+        </li>
+    </ol>
+</div>
+
+<style>
+.guide-img {
+    max-width: 100%;
+    border: 2px solid var(--gray-300);
+    border-radius: var(--radius);
+    margin: 10px 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.img-placeholder {
+    background: var(--gray-100);
+    border: 2px dashed var(--gray-300);
+    border-radius: var(--radius);
+    padding: 20px;
+    text-align: center;
+    color: var(--gray-500);
+    font-size: 14px;
+    margin: 10px 0;
+}
+</style>
+
+<!-- Configuration Form -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">🔑 Cấu hình Webhook</div>
+    </div>
+    
+    <form id="config-form" class="config-form" method="post" action="/api/config">
+        <div class="config-group">
+            <h4>Webhook Verify Token</h4>
+            
+            <div class="config-field">
+                <label for="verify-token">Verify Token</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="verify-token" name="VERIFY_TOKEN" value="{{ config.VERIFY_TOKEN }}" placeholder="random-string" style="flex: 1;">
+                    <button type="button" class="btn btn-secondary" onclick="generateVerifyToken()">🔄 Tạo mới</button>
+                </div>
+                <small>Token xác thực webhook được lưu trong database.</small>
+            </div>
+        </div>
+        
+        <div class="save-btn">
+            <button type="button" class="btn btn-secondary" onclick="resetForm()">↩️ Khôi phục</button>
+            <button type="submit" class="btn btn-primary">💾 Lưu cấu hình</button>
+        </div>
+    </form>
+</div>
+
+<!-- Webhook URL is static default -->
+<script>
+// Set default webhook URL
+document.getElementById('webhook-url').textContent = 'http://127.0.0.1:5000/webhook';
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Store original values
+let originalValues = {};
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Save original values
+    const inputs = document.querySelectorAll('#config-form input');
+    inputs.forEach(input => {
+        originalValues[input.name] = input.value;
+    });
+    
+    // Set default webhook URL
+    document.getElementById('webhook-url').textContent = 'http://127.0.0.1:5000/webhook';
+});
+
+function resetForm() {
+    const inputs = document.querySelectorAll('#config-form input');
+    inputs.forEach(input => {
+        input.value = originalValues[input.name] || '';
+    });
+    showAlert('Đã khôi phục giá trị ban đầu', 'info');
+}
+
+function loadWebhookUrl() {
+    // Webhook URL is static default
+    document.getElementById('webhook-url').textContent = 'http://127.0.0.1:5000/webhook';
+}
+
+function generateVerifyToken() {
+    // Generate random 32-character token
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let token = '';
+    for (let i = 0; i < 32; i++) {
+        token += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    document.getElementById('verify-token').value = token;
+    showAlert('Đã tạo token mới. Nhấn "Lưu cấu hình" để áp dụng!', 'info');
+}
+
+// Handle form submit
+document.getElementById('config-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const config = {};
+    
+    formData.forEach((value, key) => {
+        const trimmed = (value || "").trim();
+        config[key] = trimmed;
+    });
+
+    try {
+        const res = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            const msg = 'Đã lưu cấu hình vào database';
+            showAlert(msg, 'success');
+            // Update original values only for what we actually sent
+            Object.keys(config).forEach(key => {
+                originalValues[key] = config[key];
+            });
+            // Update displayed verify token
+            if (config.VERIFY_TOKEN) {
+                document.getElementById('verify-token-display').textContent = config.VERIFY_TOKEN;
+            }
+            // Optionally reload config from server to refresh masked values
+            // loadConfigFromServer(); // if you have such function
+        } else {
+            showAlert(data.error || '❌ Lỗi khi lưu cấu hình', 'error');
+        }
+    } catch (err) {
+        showAlert('❌ Lỗi kết nối: ' + err.message, 'error');
+    }
+});
+</script>
+{% endblock %}
+

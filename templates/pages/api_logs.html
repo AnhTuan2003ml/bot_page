@@ -1,0 +1,444 @@
+{% extends "base.html" %}
+
+{% block title %}API Logs - Bot Admin Panel{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>🌐 API Logs</h2>
+    <p>Theo dõi tất cả API calls đến và đi</p>
+</div>
+
+<!-- Stats Cards -->
+<div class="stats-grid" id="api-stats">
+    <div class="stat-card">
+        <h3 id="stat-total">0</h3>
+        <p>Tổng API Calls</p>
+    </div>
+    <div class="stat-card incoming">
+        <h3 id="stat-incoming">0</h3>
+        <p>⬅️ Đến (Incoming)</p>
+    </div>
+    <div class="stat-card outgoing">
+        <h3 id="stat-outgoing">0</h3>
+        <p>➡️ Đi (Outgoing)</p>
+    </div>
+    <div class="stat-card error">
+        <h3 id="stat-errors">0</h3>
+        <p>❌ Lỗi</p>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="section">
+    <div class="filter-bar">
+        <select id="filter-direction">
+            <option value="">Tất cả hướng</option>
+            <option value="INCOMING">⬅️ Đến</option>
+            <option value="OUTGOING">➡️ Đi</option>
+        </select>
+        <select id="filter-type">
+            <option value="">Tất cả loại API</option>
+            <option value="facebook_webhook">Facebook Webhook</option>
+            <option value="facebook_graph">Facebook Graph API</option>
+            <option value="groq">Groq API</option>
+            <option value="local_llm">Local LLM</option>
+        </select>
+        <button class="btn btn-primary" onclick="refreshLogs()">🔄 Refresh</button>
+        <button class="btn btn-secondary" onclick="clearLogs()">🗑️ Xóa cache</button>
+    </div>
+</div>
+
+<!-- API Logs Table -->
+<div class="section">
+    <h3>📋 Danh sách API Calls</h3>
+    <div class="table-container">
+        <table class="data-table" id="logs-table">
+            <thead>
+                <tr>
+                    <th>Thời gian</th>
+                    <th>Hướng</th>
+                    <th>Loại API</th>
+                    <th>Method</th>
+                    <th>Endpoint</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                    <th>Chi tiết</th>
+                </tr>
+            </thead>
+            <tbody id="logs-tbody">
+                <tr>
+                    <td colspan="8" class="text-center">Đang tải...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div id="detail-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h3>🔍 Chi tiết API Call</h3>
+        <div id="detail-content"></div>
+    </div>
+</div>
+
+<style>
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.stat-card.incoming {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+
+.stat-card.outgoing {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.stat-card.error {
+    background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+}
+
+.stat-card h3 {
+    font-size: 2.5rem;
+    margin: 0;
+}
+
+.stat-card p {
+    margin: 10px 0 0 0;
+    opacity: 0.9;
+}
+
+.filter-bar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.filter-bar select {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: white;
+}
+
+.direction-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.direction-badge.incoming {
+    background: #d4edda;
+    color: #155724;
+}
+
+.direction-badge.outgoing {
+    background: #cce5ff;
+    color: #004085;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.status-badge.success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-badge.error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.status-badge.warning {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.api-type-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+}
+
+.api-type-badge.facebook_webhook {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.api-type-badge.facebook_graph {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+.api-type-badge.groq {
+    background: #f3e5f5;
+    color: #6a1b9a;
+}
+
+.api-type-badge.local_llm {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.duration {
+    font-family: monospace;
+    color: #666;
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+    background: #1e1e2e;
+    color: #e0e0e0;
+    margin: 5% auto;
+    padding: 20px;
+    border-radius: 12px;
+    width: 80%;
+    max-width: 800px;
+    max-height: 80vh;
+    overflow-y: auto;
+    border: 1px solid #3a3a4a;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+
+.close {
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    color: #aaa;
+}
+
+.close:hover {
+    color: #ff416c;
+}
+
+.detail-section {
+    margin: 15px 0;
+    padding: 15px;
+    background: #2a2a3a;
+    border-radius: 8px;
+    border: 1px solid #3a3a4a;
+}
+
+.detail-section h4 {
+    margin-top: 0;
+    color: #fff;
+}
+
+.detail-section pre {
+    background: #1a1a2a;
+    color: #00ff88;
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    border: 1px solid #3a3a4a;
+}
+
+.detail-section p {
+    color: #ccc;
+    margin: 8px 0;
+}
+
+.detail-section strong {
+    color: #fff;
+}
+
+.text-center {
+    text-align: center;
+}
+</style>
+
+<script>
+let currentLogs = [];
+
+function loadStats() {
+    fetch('/api/logs/stats')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('stat-total').textContent = data.stats.total;
+                document.getElementById('stat-incoming').textContent = data.stats.incoming;
+                document.getElementById('stat-outgoing').textContent = data.stats.outgoing;
+                document.getElementById('stat-errors').textContent = data.stats.errors;
+            }
+        })
+        .catch(e => console.error('Error loading stats:', e));
+}
+
+function loadLogs() {
+    const direction = document.getElementById('filter-direction').value;
+    const apiType = document.getElementById('filter-type').value;
+    
+    let url = '/api/logs?limit=100';
+    if (direction) url += '&direction=' + direction;
+    if (apiType) url += '&api_type=' + apiType;
+    
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                currentLogs = data.calls;
+                renderLogs(data.calls);
+            }
+        })
+        .catch(e => {
+            console.error('Error loading logs:', e);
+            document.getElementById('logs-tbody').innerHTML = '<tr><td colspan="8" class="text-center">Lỗi khi tải dữ liệu</td></tr>';
+        });
+}
+
+function renderLogs(logs) {
+    const tbody = document.getElementById('logs-tbody');
+    if (logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">Chưa có API calls nào</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = logs.map((log, index) => {
+        const directionClass = log.direction === 'INCOMING' ? 'incoming' : 'outgoing';
+        const directionArrow = log.direction === 'INCOMING' ? '⬅️' : '➡️';
+        
+        let statusClass = 'warning';
+        if (log.response_status === 200) statusClass = 'success';
+        else if (log.response_status >= 400 || log.error) statusClass = 'error';
+        
+        const timestamp = new Date(log.timestamp).toLocaleTimeString('vi-VN');
+        
+        return `
+            <tr>
+                <td>${timestamp}</td>
+                <td><span class="direction-badge ${directionClass}">${directionArrow} ${log.direction}</span></td>
+                <td><span class="api-type-badge ${log.api_type}">${log.api_type}</span></td>
+                <td>${log.method || '-'}</td>
+                <td title="${log.endpoint}">${truncate(log.endpoint, 40)}</td>
+                <td><span class="status-badge ${statusClass}">${log.response_status || '-'}</span></td>
+                <td class="duration">${log.duration_ms ? log.duration_ms + 'ms' : '-'}</td>
+                <td><button class="btn btn-sm" onclick="showDetail(${index})">🔍</button></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function truncate(str, maxLen) {
+    if (!str) return '-';
+    if (str.length <= maxLen) return str;
+    return str.substring(0, maxLen) + '...';
+}
+
+function showDetail(index) {
+    const log = currentLogs[index];
+    const content = document.getElementById('detail-content');
+    
+    content.innerHTML = `
+        <div class="detail-section">
+            <h4>📋 Thông tin cơ bản</h4>
+            <p><strong>Timestamp:</strong> ${log.timestamp}</p>
+            <p><strong>Direction:</strong> ${log.direction}</p>
+            <p><strong>API Type:</strong> ${log.api_type}</p>
+            <p><strong>Method:</strong> ${log.method || '-'}</p>
+            <p><strong>Endpoint:</strong> ${log.endpoint}</p>
+        </div>
+        
+        ${log.payload ? `
+        <div class="detail-section">
+            <h4>📦 Request Payload</h4>
+            <pre>${JSON.stringify(log.payload, null, 2)}</pre>
+        </div>
+        ` : ''}
+        
+        <div class="detail-section">
+            <h4>📊 Response</h4>
+            <p><strong>Status:</strong> ${log.response_status || '-'}</p>
+            <p><strong>Duration:</strong> ${log.duration_ms ? log.duration_ms + 'ms' : '-'}</p>
+            ${log.response_data ? `<pre>${JSON.stringify(log.response_data, null, 2)}</pre>` : ''}
+        </div>
+        
+        ${log.error ? `
+        <div class="detail-section" style="background: #3d1f1f; border-color: #5c2a2a;">
+            <h4>❌ Error</h4>
+            <pre style="color: #ff6b6b;">${log.error}</pre>
+        </div>
+        ` : ''}
+        
+        ${log.extra ? `
+        <div class="detail-section">
+            <h4>🔧 Extra Info</h4>
+            <pre>${JSON.stringify(log.extra, null, 2)}</pre>
+        </div>
+        ` : ''}
+    `;
+    
+    document.getElementById('detail-modal').style.display = 'block';
+}
+
+function closeModal() {
+    document.getElementById('detail-modal').style.display = 'none';
+}
+
+function refreshLogs() {
+    loadStats();
+    loadLogs();
+}
+
+function clearLogs() {
+    if (confirm('Bạn có chắc muốn xóa cache API logs?')) {
+        fetch('/api/logs/clear', { method: 'POST' })
+            .then(() => refreshLogs());
+    }
+}
+
+// Auto refresh every 5 seconds
+setInterval(refreshLogs, 5000);
+
+// Filter change handlers
+document.getElementById('filter-direction').addEventListener('change', loadLogs);
+document.getElementById('filter-type').addEventListener('change', loadLogs);
+
+// Close modal on outside click
+window.onclick = function(event) {
+    const modal = document.getElementById('detail-modal');
+    if (event.target === modal) {
+        closeModal();
+    }
+}
+
+// Initial load
+loadStats();
+loadLogs();
+</script>
+{% endblock %}

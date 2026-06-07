@@ -1,0 +1,504 @@
+{% extends "base.html" %}
+
+{% block title %}Thống kê tin nhắn - Bot Admin Panel{% endblock %}
+{% block active_page %}message_stats{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Thống kê tin nhắn</h2>
+    <p>Theo dõi lượng tương tác của khách hàng theo từng page.</p>
+</div>
+
+<div class="table-wrapper" style="margin-bottom: 20px;">
+    <div class="table-header">
+        <div>
+            <div class="card-title">Bộ lọc</div>
+            <div class="card-subtitle">Lọc theo ngày, page và kỹ năng</div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary" onclick="clearMessageStatsFilters()">Xóa lọc</button>
+            <button class="btn btn-primary" onclick="loadMessageStatsData()">Lọc</button>
+            <button class="btn btn-primary" onclick="refreshMessageStatsData()">Làm mới</button>
+        </div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 12px; padding: 16px;">
+        <div>
+            <label style="font-size: 12px; color: var(--gray-500);">Từ ngày</label>
+            <input id="filter-date-from" type="date" class="form-control">
+        </div>
+        <div>
+            <label style="font-size: 12px; color: var(--gray-500);">Đến ngày</label>
+            <input id="filter-date-to" type="date" class="form-control">
+        </div>
+        <div>
+            <label style="font-size: 12px; color: var(--gray-500);">Page</label>
+            <select id="filter-page" class="form-control">
+                <option value="">Tất cả page</option>
+            </select>
+        </div>
+        <div>
+            <label style="font-size: 12px; color: var(--gray-500);">Kỹ năng</label>
+            <select id="filter-skill" class="form-control">
+                <option value="">Tất cả kỹ năng</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-content">
+            <div class="stat-number" id="stat-inbound">0</div>
+            <div class="stat-label">Tin khách nhắn</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-content">
+            <div class="stat-number" id="stat-outbound">0</div>
+            <div class="stat-label">Tin bot trả lời</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-content">
+            <div class="stat-number" id="stat-users">0</div>
+            <div class="stat-label">Khách tương tác</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-content">
+            <div class="stat-number" id="stat-new-users">0</div>
+            <div class="stat-label">Khách mới</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-content">
+            <div class="stat-number" id="stat-today-users">0</div>
+            <div class="stat-label">Khách tương tác hôm nay</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-content">
+            <div class="stat-number" id="stat-postback">0</div>
+            <div class="stat-label">Bấm nút</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-content">
+            <div class="stat-number" id="stat-failed">0</div>
+            <div class="stat-label">Gửi lỗi</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-content">
+            <div class="stat-number" id="stat-last-updated" style="font-size: 18px;">-</div>
+            <div class="stat-label">Lần cập nhật gần nhất</div>
+        </div>
+    </div>
+</div>
+
+<div class="table-wrapper" style="margin-top: 24px;">
+    <div class="table-header">
+        <div>
+            <div class="card-title">Khách tương tác nhiều nhất</div>
+            <div class="card-subtitle">Danh sách khách hàng nhắn tin nhiều nhất trong khoảng thời gian đã chọn.</div>
+        </div>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>STT</th>
+                    <th>Tên khách</th>
+                    <th>PSID</th>
+                    <th>Page</th>
+                    <th>Tin khách nhắn</th>
+                    <th>Tin bot trả lời</th>
+                    <th>Tổng tương tác</th>
+                    <th>Lần đầu nhắn</th>
+                    <th>Lần cuối nhắn</th>
+                    <th>Kỹ năng gần nhất</th>
+                    <th>Thao tác</th>
+                </tr>
+            </thead>
+            <tbody id="interactors-table-body">
+                <tr><td colspan="11" class="empty-state">Đang tải dữ liệu...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="table-wrapper" style="margin-top: 24px;">
+    <div class="table-header">
+        <div>
+            <div class="card-title">Thống kê theo Page</div>
+            <div class="card-subtitle">Tổng hợp tương tác của khách hàng theo từng page.</div>
+        </div>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Page ID</th>
+                    <th>Tên Page</th>
+                    <th>Tin khách nhắn</th>
+                    <th>Tin bot trả lời</th>
+                    <th>Khách tương tác</th>
+                    <th>Bấm nút</th>
+                    <th>Lần tương tác cuối</th>
+                    <th>Thao tác</th>
+                </tr>
+            </thead>
+            <tbody id="pages-table-body">
+                <tr><td colspan="8" class="empty-state">Đang tải dữ liệu...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<details class="table-wrapper" style="margin-top: 24px;">
+    <summary style="cursor: pointer; padding: 16px; font-weight: 700;">Thống kê nâng cao</summary>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 0 16px 16px;">
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Action</th><th>Số lượng</th></tr></thead>
+                <tbody id="actions-table-body"><tr><td colspan="2" class="empty-state">Chưa có action</td></tr></tbody>
+            </table>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Intent</th><th>Số lượng</th></tr></thead>
+                <tbody id="intents-table-body"><tr><td colspan="2" class="empty-state">Chưa có intent</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+    <div style="padding: 0 16px 16px;">
+        <div style="margin-bottom: 12px; color: var(--gray-500);">
+            RAG đã dùng: <strong id="advanced-rag-used">0</strong> · Gửi lỗi: <strong id="advanced-send-failed">0</strong>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Thời gian</th>
+                        <th>Page</th>
+                        <th>Loại</th>
+                        <th>Khách</th>
+                        <th>Kỹ năng</th>
+                        <th>Action</th>
+                        <th>Trạng thái</th>
+                        <th>Nội dung</th>
+                    </tr>
+                </thead>
+                <tbody id="events-table-body">
+                    <tr><td colspan="8" class="empty-state">Chưa có tương tác</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</details>
+
+<div id="detail-modal" class="modal hidden">
+    <div class="modal-content" style="max-width: 1000px; width: 95%;">
+        <div class="modal-header">
+            <h3>Chi tiết tương tác của khách</h3>
+            <button class="btn btn-secondary" onclick="closeDetailModal()">Đóng</button>
+        </div>
+        <div class="modal-body">
+            <div id="detail-content"><p>Đang tải...</p></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let pageMap = {};
+let lastDashboardData = null;
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
+function formatNumber(value) {
+    return Number(value || 0).toLocaleString('vi-VN');
+}
+
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return dateString;
+    return date.toLocaleDateString('vi-VN') + ' ' + date.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
+}
+
+function interactionType(event) {
+    if (event.event_type === 'postback') return 'Bấm nút';
+    if (event.direction === 'outbound') return 'Bot trả lời';
+    return 'Khách nhắn';
+}
+
+function buildQuery() {
+    const params = new URLSearchParams();
+    const dateFrom = document.getElementById('filter-date-from').value;
+    const dateTo = document.getElementById('filter-date-to').value;
+    const pageId = document.getElementById('filter-page').value;
+    const skill = document.getElementById('filter-skill').value;
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    if (pageId) params.set('page_id', pageId);
+    if (skill) params.set('skill', skill);
+    return params.toString();
+}
+
+async function loadFilterOptions() {
+    const pagesRes = await fetch('/api/pages');
+    const pagesData = await pagesRes.json();
+    if (pagesData.success) {
+        pageMap = {};
+        pagesData.pages.forEach(page => {
+            pageMap[page.page_id] = page.page_name;
+        });
+        document.getElementById('filter-page').innerHTML = '<option value="">Tất cả page</option>' + pagesData.pages.map(page =>
+            `<option value="${escapeHtml(page.page_id)}">${escapeHtml(page.page_name || page.page_id)}</option>`
+        ).join('');
+    }
+
+    try {
+        const skillsRes = await fetch('/api/skills');
+        const skillsData = await skillsRes.json();
+        if (skillsData.success) {
+            const skills = skillsData.skills || [];
+            document.getElementById('filter-skill').innerHTML = '<option value="">Tất cả kỹ năng</option>' + skills.map(skill => {
+                const name = skill.skill_name || skill.name || skill.skill_id || '';
+                return name ? `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>` : '';
+            }).join('');
+        }
+    } catch (e) {
+        console.warn('Không thể tải danh sách kỹ năng', e);
+    }
+}
+
+async function loadMessageStatsData() {
+    try {
+        const query = buildQuery();
+        const res = await fetch('/api/message-stats/overview' + (query ? `?${query}` : ''));
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Không thể tải thống kê');
+        lastDashboardData = data;
+        renderOverview(data.overview || {});
+        renderTopInteractors(data.top_interactors || []);
+        renderPageStats(data.page_stats || []);
+        renderAdvanced(data.advanced || {});
+    } catch (e) {
+        console.error('Lỗi tải thống kê:', e);
+        document.getElementById('interactors-table-body').innerHTML =
+            '<tr><td colspan="11" class="empty-state" style="color: var(--danger);">Lỗi khi tải dữ liệu</td></tr>';
+    }
+}
+
+function refreshMessageStatsData() {
+    loadFilterOptions().then(loadMessageStatsData);
+}
+
+function clearMessageStatsFilters() {
+    document.getElementById('filter-date-from').value = '';
+    document.getElementById('filter-date-to').value = '';
+    document.getElementById('filter-page').value = '';
+    document.getElementById('filter-skill').value = '';
+    loadMessageStatsData();
+}
+
+function renderOverview(overview) {
+    document.getElementById('stat-inbound').textContent = formatNumber(overview.inbound_count);
+    document.getElementById('stat-outbound').textContent = formatNumber(overview.outbound_count);
+    document.getElementById('stat-users').textContent = formatNumber(overview.unique_senders);
+    document.getElementById('stat-new-users').textContent = formatNumber(overview.new_senders);
+    document.getElementById('stat-today-users').textContent = formatNumber(overview.today_senders);
+    document.getElementById('stat-postback').textContent = formatNumber(overview.postback_count);
+    document.getElementById('stat-failed').textContent = formatNumber(overview.send_failed_count);
+    document.getElementById('stat-last-updated').textContent = formatDate(overview.last_updated_at);
+}
+
+function renderTopInteractors(rows) {
+    const tbody = document.getElementById('interactors-table-body');
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="11" class="empty-state">Chưa có dữ liệu khách tương tác</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map((row, index) => {
+        const name = row.sender_name || 'Khách chưa rõ tên';
+        const pageName = row.page_name || pageMap[row.page_id] || row.page_id || '-';
+        return `
+            <tr>
+                <td>${index + 1}</td>
+                <td>
+                    <div style="font-weight: 700;">${escapeHtml(name)}</div>
+                    <div style="font-size: 11px; color: var(--gray-500);">${escapeHtml(row.sender_psid || '')}</div>
+                </td>
+                <td><code style="font-size: 11px;">${escapeHtml(row.sender_psid || '-')}</code></td>
+                <td>${escapeHtml(pageName)}</td>
+                <td><strong style="color: var(--primary);">${formatNumber(row.inbound_count)}</strong></td>
+                <td>${formatNumber(row.outbound_count)}</td>
+                <td>${formatNumber(row.total_interactions)}</td>
+                <td style="font-size: 12px;">${formatDate(row.first_inbound_at)}</td>
+                <td style="font-size: 12px;">${formatDate(row.last_inbound_at)}</td>
+                <td>${escapeHtml(row.last_skill || '-')}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="showSenderDetails('${escapeHtml(row.page_id)}', '${escapeHtml(row.sender_psid)}')">Chi tiết</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderPageStats(rows) {
+    const tbody = document.getElementById('pages-table-body');
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Chưa có dữ liệu theo page</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map(row => {
+        const pageName = row.page_name || pageMap[row.page_id] || '-';
+        return `
+            <tr>
+                <td><code style="font-size: 12px;">${escapeHtml(row.page_id)}</code></td>
+                <td><strong>${escapeHtml(pageName)}</strong></td>
+                <td><strong style="color: var(--primary);">${formatNumber(row.inbound_count || row.total_messages)}</strong></td>
+                <td>${formatNumber(row.outbound_count)}</td>
+                <td>${formatNumber(row.unique_senders)}</td>
+                <td>${formatNumber(row.postback_count)}</td>
+                <td style="font-size: 12px;">${formatDate(row.last_interaction_at)}</td>
+                <td><button class="btn btn-sm btn-primary" onclick="filterByPage('${escapeHtml(row.page_id)}')">Lọc page này</button></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function filterByPage(pageId) {
+    document.getElementById('filter-page').value = pageId;
+    loadMessageStatsData();
+}
+
+function renderAdvanced(advanced) {
+    const rag = advanced.rag || {};
+    document.getElementById('advanced-rag-used').textContent = formatNumber(rag.rag_used_count);
+    document.getElementById('advanced-send-failed').textContent = formatNumber((lastDashboardData?.overview || {}).send_failed_count);
+    renderTopRows('actions-table-body', advanced.top_actions || [], 'action');
+    renderTopRows('intents-table-body', advanced.top_intents || [], 'intent');
+    renderRecentEvents(advanced.recent_events || []);
+}
+
+function renderTopRows(targetId, rows, label) {
+    const tbody = document.getElementById(targetId);
+    if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="2" class="empty-state">Chưa có ${label}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rows.map(row => `
+        <tr>
+            <td><strong>${escapeHtml(row.name || '-')}</strong></td>
+            <td>${formatNumber(row.count)}</td>
+        </tr>
+    `).join('');
+}
+
+function renderRecentEvents(events) {
+    const tbody = document.getElementById('events-table-body');
+    if (!events.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Chưa có tương tác</td></tr>';
+        return;
+    }
+    tbody.innerHTML = events.map(event => `
+        <tr>
+            <td style="font-size: 12px;">${formatDate(event.created_at)}</td>
+            <td><code style="font-size: 11px;">${escapeHtml(event.page_id)}</code></td>
+            <td>${interactionType(event)}</td>
+            <td>
+                <div style="font-weight: 600;">${escapeHtml(event.sender_name || 'Khách chưa rõ tên')}</div>
+                <div style="font-size: 11px; color: var(--gray-500);">${escapeHtml(event.sender_psid || '')}</div>
+            </td>
+            <td>${escapeHtml(event.skill || '-')}</td>
+            <td>${escapeHtml(event.action || '-')}</td>
+            <td>${escapeHtml(event.status || '-')}</td>
+            <td style="max-width: 320px; white-space: normal;">${escapeHtml(event.message_text_preview || '')}</td>
+        </tr>
+    `).join('');
+}
+
+async function showSenderDetails(pageId, senderPsid) {
+    const contentDiv = document.getElementById('detail-content');
+    contentDiv.innerHTML = '<p>Đang tải...</p>';
+    document.getElementById('detail-modal').classList.remove('hidden');
+    try {
+        const res = await fetch(`/api/message-stats/senders/${encodeURIComponent(pageId)}/${encodeURIComponent(senderPsid)}?limit=50`);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Không thể tải chi tiết');
+        renderSenderDetail(data.detail || {});
+    } catch (e) {
+        console.error('Lỗi tải chi tiết khách:', e);
+        contentDiv.innerHTML = '<p style="color: var(--danger);">Không thể tải chi tiết tương tác của khách.</p>';
+    }
+}
+
+function renderSenderDetail(detail) {
+    const name = detail.sender_name || 'Khách chưa rõ tên';
+    const pageName = detail.page_name || pageMap[detail.page_id] || detail.page_id || '-';
+    const events = detail.events || [];
+    const historyHtml = events.length ? `
+        <div class="table-container" style="max-height: 420px;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Thời gian</th>
+                        <th>Loại</th>
+                        <th>Nội dung preview</th>
+                        <th>Trạng thái</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${events.map(event => `
+                        <tr>
+                            <td style="font-size: 12px;">${formatDate(event.created_at)}</td>
+                            <td>${interactionType(event)}</td>
+                            <td style="white-space: normal;">${escapeHtml(event.message_text_preview || '')}</td>
+                            <td>${escapeHtml(event.status || '-')}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    ` : '<p style="color: var(--gray-500);">Chưa có lịch sử chi tiết cho khách này.</p>';
+
+    document.getElementById('detail-content').innerHTML = `
+        <div style="margin-bottom: 20px; padding: 16px; background: var(--gray-50); border-radius: 8px;">
+            <h4 style="margin: 0 0 8px 0; color: var(--primary);">${escapeHtml(name)}</h4>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 8px; color: var(--gray-600);">
+                <div><strong>PSID:</strong> <code>${escapeHtml(detail.sender_psid || '-')}</code></div>
+                <div><strong>Page:</strong> ${escapeHtml(pageName)}</div>
+                <div><strong>Tổng tin khách nhắn:</strong> ${formatNumber(detail.inbound_count)}</div>
+                <div><strong>Tổng tin bot trả lời:</strong> ${formatNumber(detail.outbound_count)}</div>
+                <div><strong>Lần đầu nhắn:</strong> ${formatDate(detail.first_inbound_at)}</div>
+                <div><strong>Lần cuối nhắn:</strong> ${formatDate(detail.last_inbound_at)}</div>
+                <div><strong>Kỹ năng gần nhất:</strong> ${escapeHtml(detail.last_skill || '-')}</div>
+            </div>
+        </div>
+        <h4 style="margin: 0 0 12px 0;">Lịch sử tương tác gần đây</h4>
+        ${historyHtml}
+    `;
+}
+
+function closeDetailModal() {
+    document.getElementById('detail-modal').classList.add('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadFilterOptions();
+    await loadMessageStatsData();
+});
+
+document.getElementById('detail-modal').addEventListener('click', (event) => {
+    if (event.target === document.getElementById('detail-modal')) closeDetailModal();
+});
+</script>
+{% endblock %}

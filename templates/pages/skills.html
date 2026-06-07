@@ -1,0 +1,499 @@
+{% extends "base.html" %}
+
+{% block title %}Quản lý Chuyên môn AI - Bot Admin{% endblock %}
+{% block active_page %}skills{% endblock %}
+
+{% block content %}
+<style>
+.skill-modal { width: 92vw; max-width: 1100px; max-height: 92vh; display: flex; flex-direction: column; }
+.skill-modal .modal-body { overflow-y: auto; padding: 16px 18px; }
+.skill-modal .modal-footer { flex-shrink: 0; border-top: 1px solid rgba(255,255,255,.08); }
+.skill-section { padding: 14px 0 18px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.skill-section:last-child { border-bottom: 0; }
+.skill-section h4 { margin: 0 0 10px; font-size: 16px; }
+.skill-help { color: var(--gray-500); font-size: 12px; line-height: 1.5; margin: 6px 0 10px; }
+.skill-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.skill-full { grid-column: 1 / -1; }
+.skill-modal input[type="text"], .skill-modal textarea, .skill-modal select { width: 100%; }
+.skill-modal textarea { min-height: 120px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; line-height: 1.5; background:#111827 !important; color:#e5e7eb !important; border:1px solid rgba(148,163,184,.28) !important; }
+.skill-modal textarea::placeholder { color:#6b7280; }
+#new-business-json, #edit-business-json { min-height: 260px; }
+#new-fields-text, #edit-fields-text { min-height: 110px; }
+.skill-rag-editor { min-height: 220px; white-space: pre; overflow: auto; resize: vertical; }
+.skill-rag-editor.is-wrapped { white-space: pre-wrap; }
+.skill-rag-status { margin-top: 6px; font-size: 12px; white-space: pre-wrap; }
+.skill-rag-status.is-valid { color: #22c55e; }
+.skill-rag-status.is-error { color: #ef4444; }
+.skill-field-preview { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.skill-field-pill { display:inline-flex; align-items:center; padding:4px 8px; border-radius:999px; background:rgba(34,197,94,.12); color:#86efac; font-size:12px; }
+.skill-guide { background: rgba(15,23,42,.45); border:1px solid rgba(148,163,184,.18); border-radius:10px; padding:12px; }
+.skill-guide textarea { min-height: 170px; }
+@media (max-width: 900px) { .skill-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="page-header">
+    <h2>🎯 Quản lý Chuyên môn AI</h2>
+</div>
+
+<div class="table-wrapper">
+    <div class="table-header">
+        <h3>📊 Danh sách chuyên môn</h3>
+        <button class="btn btn-success" onclick="openAddModal()">＋ Thêm chuyên môn</button>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Tên chuyên môn</th>
+                    <th>Tên bảng dữ liệu</th>
+                    <th>Mô tả</th>
+                    <th>Field</th>
+                    <th>Thao tác</th>
+                </tr>
+            </thead>
+            <tbody id="skills-table">
+                <tr><td colspan="5" class="empty-state">Đang tải...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="add-modal" class="modal hidden">
+    <div class="modal-content skill-modal">
+        <div class="modal-header">
+            <h3>➕ Thêm chuyên môn</h3>
+            <button class="btn btn-secondary" onclick="closeAddModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <section class="skill-section">
+                <h4>Thông tin cơ bản</h4>
+                <div class="skill-grid">
+                    <div class="form-group"><label>Tên chuyên môn</label><input id="new-skill-name" type="text" placeholder="VD: Tư vấn biển số"></div>
+                    <div class="form-group"><label>Tên bảng dữ liệu</label><input id="new-skill-id" type="text" placeholder="VD: tu_van_bien_so"></div>
+                    <div class="form-group"><label>Tên nhân vật</label><input id="new-character-name" type="text" placeholder="VD: Linh"></div>
+                </div>
+            </section>
+            <section class="skill-section">
+                <h4>Field dữ liệu của nghiệp vụ</h4>
+                <div class="skill-help">Nhập danh sách field cách nhau bằng xuống dòng hoặc dấu phẩy. Field dùng cho AI hiểu ý định và tạo form data trong Kho dữ liệu.</div>
+                <textarea id="new-fields-text" placeholder="Mã biển&#10;Giá&#10;Tỉnh&#10;Loại xe&#10;Trạng thái"></textarea>
+                <div id="new-fields-preview" class="skill-field-preview"></div>
+            </section>
+            <section class="skill-section">
+                <h4>Cấu hình nghiệp vụ & Prompt JSON</h4>
+                <div class="skill-help">Dán JSON gồm mô tả, mục tiêu, quy trình, phân tích ý định, quy tắc trả lời và prompt hệ thống. Không cần đưa Tên chuyên môn/Tên bảng dữ liệu/Tên gọi AI/Fields vào JSON vì đã có ô riêng.</div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="validateBusinessJson('new', true)">Validate JSON</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="copyJsonGuide()">Copy hướng dẫn tạo JSON bằng ChatGPT</button>
+                </div>
+                <textarea id="new-business-json" spellcheck="false" placeholder='{"mo_ta":"...","muc_tieu":["..."],"quy_trinh":["..."],"phan_tich_y_dinh":{"intents":["..."],"multi_intent":true,"entities_from_fields":true},"quy_tac_tra_loi":["..."],"prompt_he_thong":"..."}'></textarea>
+                <div id="new-json-status" class="skill-rag-status"></div>
+                <details class="skill-guide" style="margin-top:10px;">
+                    <summary>Hướng dẫn nội dung JSON</summary>
+                    <p class="skill-help">Copy nội dung dưới đây đưa cho ChatGPT để tạo JSON cho lĩnh vực bất kỳ.</p>
+                    <textarea id="json-guide" readonly></textarea>
+                </details>
+            </section>
+            <section class="skill-section">
+                <details>
+                    <summary><strong>Tài liệu đào tạo</strong> <span class="skill-help">(tùy chọn)</span></summary>
+                    <div class="skill-help">Mỗi dòng là một JSON object hợp lệ. RAG đi theo skill và dùng làm tri thức bổ sung.</div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="formatRagEditor('new')">Format JSON</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="validateRagEditor('new', true)">Không cần validate</button>
+                        <button type="button" id="new-rag-wrap-toggle" class="btn btn-sm btn-secondary" onclick="toggleRagWrap('new')">Wrap dòng: tắt</button>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="clearRagEditor('new')">Xóa tài liệu</button>
+                    </div>
+                    <textarea id="new-rag-content" class="skill-rag-editor" spellcheck="false" wrap="off"></textarea>
+                    <div id="new-rag-status" class="skill-rag-status"></div>
+                </details>
+            </section>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeAddModal()">Hủy</button>
+            <button class="btn btn-success" onclick="addSkill()">💾 Lưu chuyên môn</button>
+        </div>
+    </div>
+</div>
+
+<div id="edit-modal" class="modal hidden">
+    <div class="modal-content skill-modal">
+        <div class="modal-header">
+            <h3>✏️ Sửa chuyên môn</h3>
+            <button class="btn btn-secondary" onclick="closeEditModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="edit-skill-name-old">
+            <section class="skill-section">
+                <h4>Thông tin cơ bản</h4>
+                <div class="skill-grid">
+                    <div class="form-group"><label>Tên chuyên môn</label><input id="edit-skill-name" type="text"></div>
+                    <div class="form-group"><label>Tên bảng dữ liệu</label><input id="edit-skill-id" type="text"></div>
+                    <div class="form-group"><label>Tên nhân vật</label><input id="edit-character-name" type="text"></div>
+                </div>
+            </section>
+            <section class="skill-section">
+                <h4>Field dữ liệu của nghiệp vụ</h4>
+                <div class="skill-help">Nhập danh sách field cách nhau bằng xuống dòng hoặc dấu phẩy.</div>
+                <textarea id="edit-fields-text"></textarea>
+                <div id="edit-fields-preview" class="skill-field-preview"></div>
+            </section>
+            <section class="skill-section">
+                <h4>Cấu hình nghiệp vụ & Prompt JSON</h4>
+                <div class="skill-help">JSON chỉ chứa thiết kế nghiệp vụ và prompt. Không đưa Tên chuyên môn/Tên bảng dữ liệu/Tên gọi AI/Fields vào đây.</div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="validateBusinessJson('edit', true)">Validate JSON</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="copyJsonGuide()">Copy hướng dẫn tạo JSON bằng ChatGPT</button>
+                </div>
+                <textarea id="edit-business-json" spellcheck="false"></textarea>
+                <div id="edit-json-status" class="skill-rag-status"></div>
+            </section>
+            <section class="skill-section">
+                <details>
+                    <summary><strong>Tài liệu đào tạo</strong> <span class="skill-help">(tùy chọn)</span></summary>
+                    <div id="edit-rag-file" class="skill-help"></div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="formatRagEditor('edit')">Format JSON</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="validateRagEditor('edit', true)">Không cần validate</button>
+                        <button type="button" id="edit-rag-wrap-toggle" class="btn btn-sm btn-secondary" onclick="toggleRagWrap('edit')">Wrap dòng: tắt</button>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="clearRagEditor('edit')">Xóa tài liệu</button>
+                    </div>
+                    <textarea id="edit-rag-content" class="skill-rag-editor" spellcheck="false" wrap="off"></textarea>
+                    <div id="edit-rag-status" class="skill-rag-status"></div>
+                </details>
+            </section>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeEditModal()">Hủy</button>
+            <button class="btn btn-primary" onclick="saveSkillEdit()">💾 Lưu chuyên môn</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let skillsByName = {};
+let editingSkillName = null;
+const RAG_PLACEHOLDER = `{"title":"Câu hỏi thường gặp","content":"Nội dung câu trả lời hoặc tri thức nghiệp vụ.","tags":["faq"]}`;
+const JSON_GUIDE_TEXT = `Hãy tạo cho tôi JSON cấu hình kỹ năng cho một nghiệp vụ.
+
+Không đưa tên kỹ năng, mã kỹ năng, tên nhân vật hoặc fields vào JSON.
+Chỉ trả JSON hợp lệ, không markdown.
+
+JSON cần có cấu trúc:
+{
+  "mo_ta": "Mô tả ngắn nghiệp vụ",
+  "muc_tieu": ["Mục tiêu 1", "Mục tiêu 2"],
+  "quy_trinh": ["Bước xử lý 1", "Bước xử lý 2"],
+  "phan_tich_y_dinh": {
+    "intents": ["GREETING", "ASK_PRICE", "SEARCH_ITEM", "NEGOTIATE_PRICE", "CONTACT", "GENERAL_CHAT"],
+    "multi_intent": true,
+    "entities_from_fields": true
+  },
+  "quy_tac_tra_loi": [
+    "Không tự bịa dữ liệu",
+    "Nếu khách hỏi nhiều ý độc lập, trả lời mỗi ý thành một tin nhắn riêng và ngăn cách bằng ---MSG---"
+  ],
+  "prompt_he_thong": "Prompt hệ thống điều khiển cách bot trả lời"
+}
+
+Tạo JSON cho lĩnh vực: <điền lĩnh vực của tôi>.`;
+
+function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function normalizeKey(value) {
+    const aliases = {
+        'ma_bien': 'plate_number', 'bien_so': 'plate_number', 'gia': 'price', 'tinh': 'province',
+        'loai_xe': 'vehicle_type', 'trang_thai': 'status', 'ten_san_pham': 'product_name',
+        'loai_san_pham': 'product_type', 'mau': 'color', 'kich_co': 'size', 'size': 'size',
+        'chieu_cao': 'height_cm', 'can_nang': 'weight_kg', 'ton_kho': 'stock'
+    };
+    const key = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    return aliases[key] || key;
+}
+
+function slugifyTableName(value) {
+    return String(value || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd').replace(/Đ/g, 'd')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '');
+}
+
+function bindDataTableAutoFill(prefix) {
+    const nameInput = document.getElementById(`${prefix}-skill-name`);
+    const tableInput = document.getElementById(`${prefix}-skill-id`);
+    if (!nameInput || !tableInput || tableInput.dataset.boundAutoFill === '1') return;
+    tableInput.dataset.boundAutoFill = '1';
+    tableInput.dataset.manual = tableInput.value ? '1' : '0';
+    tableInput.addEventListener('input', () => { tableInput.dataset.manual = '1'; });
+    nameInput.addEventListener('input', () => {
+        if (tableInput.dataset.manual !== '1' || !tableInput.value.trim()) {
+            tableInput.value = slugifyTableName(nameInput.value);
+        }
+    });
+}
+
+function parseFieldsText(text) {
+    const seen = new Set();
+    return String(text || '').split(/[,\n]+/).map(v => v.trim()).filter(Boolean).map(label => {
+        const key = normalizeKey(label);
+        if (!key || seen.has(key)) return null;
+        seen.add(key);
+        const isMoney = ['price', 'gia', 'gia_ban', 'gia_tri'].includes(key) || key.includes('price') || key.includes('gia');
+        const isStatus = key === 'status' || key === 'trang_thai';
+        return {
+            field_key: key,
+            field_label: label,
+            field_type: isMoney ? 'money' : 'text',
+            description: '', examples: '', synonyms: '',
+            options: '',
+            is_required: 0, is_entity: 1, is_searchable: 1, is_filterable: isStatus ? 1 : 0, is_displayed: 1
+        };
+    }).filter(Boolean);
+}
+
+function fieldsToText(fields) {
+    return (fields || []).map(f => f.field_label || f.label || f.field_key || '').filter(Boolean).join('\n');
+}
+
+function renderFieldPreview(prefix) {
+    const fields = parseFieldsText(document.getElementById(`${prefix}-fields-text`).value);
+    document.getElementById(`${prefix}-fields-preview`).innerHTML = fields.map(f => `<span class="skill-field-pill">${esc(f.field_label)} → ${esc(f.field_key)}</span>`).join('');
+}
+
+function inferBusinessDomain(payload, fields) {
+    const text = [payload.skill_id, payload.name, fields.map(f => f.field_label).join(' '), fields.map(f => f.field_key).join(' ')].join(' ').toLowerCase();
+    if (text.includes('plate') || text.includes('bien') || text.includes('biển') || text.includes('vehicle_type')) return 'plate_sales';
+    if (text.includes('fashion') || text.includes('quần') || text.includes('áo') || text.includes('size') || text.includes('color')) return 'fashion_sales';
+    return 'generic_sales';
+}
+
+function normalizeBusinessJson(obj) {
+    const arr = v => Array.isArray(v) ? v.join('\n') : (v && typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v || ''));
+    const intent = obj.phan_tich_y_dinh || obj.intent_analysis || obj.intent || '';
+    const rules = obj.quy_tac_tra_loi || obj.rules || [];
+    const basePrompt = obj.prompt_he_thong || obj.system_prompt || '';
+    const systemParts = [basePrompt, Array.isArray(rules) && rules.length ? `\nQUY TẮC TRẢ LỜI:\n- ${rules.join('\n- ')}` : ''].filter(Boolean);
+    return {
+        description: obj.mo_ta || obj.description || '',
+        personality: obj.tinh_cach || obj.personality || '',
+        target_description: arr(obj.muc_tieu || obj.goals || ''),
+        workflow_prompt: arr(obj.quy_trinh || obj.workflow || ''),
+        intent_prompt: typeof intent === 'string' ? intent : JSON.stringify(intent, null, 2),
+        system_prompt: systemParts.join('\n').trim()
+    };
+}
+
+function parseBusinessJson(prefix) {
+    const raw = document.getElementById(`${prefix}-business-json`).value.trim();
+    if (!raw) return {ok:false, error:'Vui lòng dán JSON nghiệp vụ.'};
+    try {
+        const obj = JSON.parse(raw);
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {ok:false, error:'JSON phải là object.'};
+        const normalized = normalizeBusinessJson(obj);
+        return {ok:true, obj, normalized};
+    } catch (err) {
+        return {ok:false, error:`JSON không hợp lệ: ${err.message}`};
+    }
+}
+
+function validateBusinessJson(prefix, showResult=false) {
+    const status = document.getElementById(`${prefix}-json-status`);
+    const result = parseBusinessJson(prefix);
+    status.classList.remove('is-valid', 'is-error');
+    if (!result.ok) {
+        status.textContent = result.error;
+        status.classList.add('is-error');
+        return false;
+    }
+    if (showResult) {
+        status.textContent = 'JSON hợp lệ.';
+        status.classList.add('is-valid');
+    } else {
+        status.textContent = '';
+    }
+    return true;
+}
+
+function buildBusinessJsonFromSkill(skill) {
+    return JSON.stringify({
+        mo_ta: skill.description || '',
+        muc_tieu: String(skill.target_description || '').split(/\n+/).filter(Boolean),
+        quy_trinh: String(skill.workflow_prompt || '').split(/\n+/).filter(Boolean),
+        phan_tich_y_dinh: tryParseJson(skill.intent_prompt) || { huong_dan: skill.intent_prompt || '', multi_intent: true, entities_from_fields: true },
+        quy_tac_tra_loi: [],
+        prompt_he_thong: skill.system_prompt || ''
+    }, null, 2);
+}
+
+function tryParseJson(text) { try { return JSON.parse(text); } catch { return null; } }
+
+function copyJsonGuide() {
+    navigator.clipboard?.writeText(JSON_GUIDE_TEXT);
+    showAlert('Đã copy hướng dẫn tạo JSON.');
+}
+
+function validateJsonl(text) {
+    const errors = []; let count = 0;
+    String(text || '').split(/\r?\n/).forEach((line, index) => {
+        const trimmed = line.trim(); if (!trimmed) return; count += 1;
+        try { const obj = JSON.parse(trimmed); if (!obj || typeof obj !== 'object' || Array.isArray(obj)) errors.push(`Dòng ${index+1}: phải là JSON object`); }
+        catch (err) { errors.push(`Dòng ${index+1}: ${err.message}`); }
+    });
+    return {errors, count};
+}
+function ragEditor(prefix) { return document.getElementById(`${prefix}-rag-content`); }
+function setRagStatus(prefix, msg, cls='') { const el = document.getElementById(`${prefix}-rag-status`); el.textContent = msg || ''; el.className = `skill-rag-status ${cls}`; }
+function validateRagEditor(prefix, show=false) { if (show) setRagStatus(prefix, 'Tài liệu đào tạo sẽ được lưu dạng text.', 'is-valid'); return true; }
+function formatRagEditor(prefix) { setRagStatus(prefix, 'Không cần format. Tài liệu đào tạo là text thường.', 'is-valid'); }
+function toggleRagWrap(prefix) { const ed=ragEditor(prefix); const wrapped=ed.classList.toggle('is-wrapped'); ed.setAttribute('wrap', wrapped?'soft':'off'); const btn=document.getElementById(`${prefix}-rag-wrap-toggle`); if(btn) btn.textContent=`Wrap dòng: ${wrapped?'bật':'tắt'}`; }
+function clearRagEditor(prefix) { ragEditor(prefix).value=''; setRagStatus(prefix,''); }
+function normalizeRagContentForEditor(value) { return value || ''; }
+
+
+async function loadSkills() {
+    const tbody = document.getElementById('skills-table');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Đang tải...</td></tr>';
+    try {
+        const res = await fetch('/api/skills');
+        const data = await res.json();
+        if (!data.success) {
+            if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${esc(data.error || 'Không tải được danh sách chuyên môn')}</td></tr>`;
+            showAlert(data.error || 'Không tải được danh sách chuyên môn', 'error');
+            return;
+        }
+        const items = data.skills || [];
+        skillsByName = {};
+        items.forEach(item => {
+            if (item.name) skillsByName[item.name] = item;
+            if (item.skill_id) skillsByName[item.skill_id] = item;
+            if (item.id !== undefined && item.id !== null) skillsByName[String(item.id)] = item;
+        });
+        renderSkills(items);
+    } catch (err) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${esc(err.message)}</td></tr>`;
+        showAlert('Lỗi tải danh sách chuyên môn: ' + err.message, 'error');
+    }
+}
+
+function renderSkills(skills) {
+    const tbody = document.getElementById('skills-table');
+    if (!skills.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Chưa có chuyên môn nào</td></tr>'; return; }
+    tbody.innerHTML = skills.map(s => {
+        const safe = String(s.name || '').replace(/'/g, "\\'");
+        const fields = s.fields || [];
+        return `<tr>
+            <td><strong>${esc(s.name || '')}</strong>${s.character_name ? `<div class="skill-help">Nhân vật: ${esc(s.character_name)}</div>` : ''}</td>
+            <td>${esc(s.data_table || s.skill_id || '')}</td>
+            <td>${esc(s.description || '-')}</td>
+            <td>${fields.length ? `${fields.length} field` : '-'}</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="openEditModal('${safe}')">✏️ Sửa</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteSkill('${safe}')">🗑️ Xóa</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function openAddModal() {
+    document.getElementById('add-modal').classList.remove('hidden');
+    const tableInput = document.getElementById('new-skill-id');
+    if (tableInput && !tableInput.value.trim()) tableInput.dataset.manual = '0';
+    bindDataTableAutoFill('new');
+    renderFieldPreview('new');
+}
+function closeAddModal() {
+    document.getElementById('add-modal').classList.add('hidden');
+    ['new-skill-name','new-skill-id','new-character-name','new-fields-text','new-business-json','new-rag-content'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+    const tableInput = document.getElementById('new-skill-id'); if (tableInput) tableInput.dataset.manual='0';
+    document.getElementById('new-json-status').textContent='';
+    setRagStatus('new',''); renderFieldPreview('new');
+}
+function openEditModal(name) {
+    const skill = skillsByName[name];
+    if (!skill) return showAlert('Không tìm thấy chuyên môn', 'error');
+    editingSkillName = name;
+    document.getElementById('edit-skill-name-old').value = name;
+    document.getElementById('edit-skill-name').value = skill.name || '';
+    document.getElementById('edit-skill-id').value = skill.data_table || skill.skill_id || '';
+    document.getElementById('edit-character-name').value = skill.character_name || '';
+    document.getElementById('edit-fields-text').value = fieldsToText(skill.fields || []);
+    document.getElementById('edit-business-json').value = skill.persona_json || buildBusinessJsonFromSkill(skill);
+    document.getElementById('edit-rag-content').value = normalizeRagContentForEditor(skill.rag_content);
+    document.getElementById('edit-rag-file').textContent = '';
+    document.getElementById('edit-json-status').textContent=''; setRagStatus('edit',''); renderFieldPreview('edit');
+    bindDataTableAutoFill('edit');
+    const editTableInput = document.getElementById('edit-skill-id'); if (editTableInput) editTableInput.dataset.manual='1';
+    document.getElementById('edit-modal').classList.remove('hidden');
+}
+function closeEditModal() { document.getElementById('edit-modal').classList.add('hidden'); editingSkillName = null; }
+
+function collectSkill(prefix) {
+    const fields = parseFieldsText(document.getElementById(`${prefix}-fields-text`).value);
+    const rawPersona = document.getElementById(`${prefix}-business-json`).value.trim();
+    const parsed = parseBusinessJson(prefix);
+    if (!parsed.ok) return {error: parsed.error};
+    const base = {
+        skill_id: document.getElementById(`${prefix}-skill-id`).value.trim(),
+        data_table: document.getElementById(`${prefix}-skill-id`).value.trim(),
+        name: document.getElementById(`${prefix}-skill-name`).value.trim(),
+        character_name: document.getElementById(`${prefix}-character-name`).value.trim(),
+        training_content: document.getElementById(`${prefix}-rag-content`).value.replace(/\s+$/, ''),
+        rag_content: document.getElementById(`${prefix}-rag-content`).value.replace(/\s+$/, ''),
+        persona_json: rawPersona,
+        data_fields_json: JSON.stringify(fields.map(f => ({key:f.field_key, label:f.field_label, required:!!f.is_required}))),
+        fields
+    };
+    Object.assign(base, parsed.normalized);
+    return base;
+}
+
+async function addSkill() {
+    const payload = collectSkill('new');
+    if (payload.error) return showAlert(payload.error, 'error');
+    if (!payload.name || !payload.skill_id) return showAlert('Vui lòng nhập Tên chuyên môn và Tên bảng dữ liệu.', 'error');
+    await saveSkillRequest('/api/skills', 'POST', payload, () => { closeAddModal(); loadSkills(); });
+}
+async function saveSkillEdit() {
+    if (!editingSkillName) return;
+    const payload = collectSkill('edit');
+    if (payload.error) return showAlert(payload.error, 'error');
+    if (!payload.name || !payload.skill_id) return showAlert('Vui lòng nhập Tên chuyên môn và Tên bảng dữ liệu.', 'error');
+    await saveSkillRequest(`/api/skills/${encodeURIComponent(editingSkillName)}`, 'PUT', payload, () => { closeEditModal(); loadSkills(); });
+}
+async function saveSkillRequest(url, method, payload, onSuccess) {
+    try {
+        const res = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        const data = await res.json();
+        if (!data.success) return showAlert((data.errors || [data.error || data.message || 'Lưu thất bại']).join('\n'), 'error');
+        showAlert('Đã lưu chuyên môn.'); onSuccess();
+    } catch (err) { showAlert('Lỗi: ' + err.message, 'error'); }
+}
+async function deleteSkill(name) {
+    if (!confirm('Xóa chuyên môn này?')) return;
+    const res = await fetch(`/api/skills/${encodeURIComponent(name)}`, {method:'DELETE'});
+    const data = await res.json();
+    if (data.success) { showAlert('Đã xóa chuyên môn.'); loadSkills(); } else showAlert(data.error || 'Xóa thất bại', 'error');
+}
+
+['new','edit'].forEach(prefix => {
+    document.addEventListener('input', event => { if (event.target && event.target.id === `${prefix}-fields-text`) renderFieldPreview(prefix); });
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    const guide = document.getElementById('json-guide'); if (guide) guide.value = JSON_GUIDE_TEXT;
+    const newRag = document.getElementById('new-rag-content'); if (newRag) newRag.placeholder = RAG_PLACEHOLDER;
+    bindDataTableAutoFill('new');
+    bindDataTableAutoFill('edit');
+    loadSkills();
+});
+</script>
+{% endblock %}
