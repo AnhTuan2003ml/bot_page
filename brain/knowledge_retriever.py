@@ -173,12 +173,40 @@ def is_identity_or_pronoun_message(message: str) -> bool:
     return bool(re.fullmatch(r"(anh|chi|a|c)", norm) or re.match(r"^toi ten\b", norm))
 
 
+
+
+def _record_domain(record: dict) -> str:
+    blob = normalize_vi(" ".join([
+        str((record or {}).get("id") or ""),
+        str((record or {}).get("title") or ""),
+        " ".join(str(tag) for tag in (record or {}).get("tags") or []),
+    ]))
+    if "style_sale_clothes" in blob or "quan ao" in blob or "clothes" in blob or "fashion" in blob:
+        return "fashion"
+    if "style_sale_bien" in blob or "bien so" in blob or "bien xe" in blob or "license plate" in blob:
+        return "license_plate"
+    return "generic"
+
+
+def _filter_records_by_domain(records: list[dict], domain: str) -> list[dict]:
+    domain = str(domain or "").strip()
+    if domain not in {"fashion", "license_plate"}:
+        return records or []
+    filtered = []
+    for record in records or []:
+        record_domain = _record_domain(record)
+        if record_domain in {domain, "generic"}:
+            filtered.append(record)
+    return filtered
+
 def retrieve_knowledge(
     message: str,
     records: list[dict],
     intent: str = "",
     top_k: int = 5,
+    domain: str = "",
 ) -> list[dict]:
+    records = _filter_records_by_domain(records, domain)
     message_norm = normalize_vi(message)
     message_tokens = set(tokenize(message))
     intent_hints = {normalize_vi(value) for value in INTENT_RECORD_HINTS.get(
@@ -243,7 +271,7 @@ def retrieve_knowledge(
     return hits
 
 
-def infer_intent_from_knowledge(message: str, records: list[dict]) -> dict:
+def infer_intent_from_knowledge(message: str, records: list[dict], domain: str = "") -> dict:
     norm = normalize_vi(message)
     tokens = norm.split()
     specific_item = has_specific_item(message)
@@ -286,15 +314,15 @@ def infer_intent_from_knowledge(message: str, records: list[dict]) -> dict:
     elif _contains_any(norm, VEHICLE_PHRASES) or _contains_any(norm, PLATE_SEARCH_PHRASES):
         intent, need_data, reply_mode, confidence = "SEARCH_PLATE", True, "DATA_REPLY", 0.86
     elif records:
-        initial_hits = retrieve_knowledge(message, records, top_k=3)
+        initial_hits = retrieve_knowledge(message, records, top_k=3, domain=domain)
         if initial_hits:
             intent, reply_mode, confidence = "GENERAL_CHAT", "KNOWLEDGE_REPLY", 0.58
 
-    hits = retrieve_knowledge(message, records, intent=intent, top_k=8 if len(intents) > 1 else 5)
+    hits = retrieve_knowledge(message, records, intent=intent, top_k=8 if len(intents) > 1 else 5, domain=domain)
     if len(intents) > 1:
         hit_ids = {str(hit.get("id") or "") for hit in hits}
         for extra_intent in intents:
-            for hit in retrieve_knowledge(message, records, intent=extra_intent, top_k=8):
+            for hit in retrieve_knowledge(message, records, intent=extra_intent, top_k=8, domain=domain):
                 hit_id = str(hit.get("id") or "")
                 if hit_id not in hit_ids:
                     hits.append(hit)

@@ -48,6 +48,8 @@ from database.customer_profile_manager import init_customer_profiles_table
 from database.conversation_state_manager import init_conversation_states_table
 from database.conversation_manager import init_conversations_table
 from database.message_stats_manager import init_message_stats_table
+from services.runtime_store import runtime_store
+from services.state_buffer import start_db_flush_workers
 init_pages_table()  # Giữ nguyên logic Page hiện tại
 init_expertises_table()
 init_skills_table()  # compatibility facade, không seed skill mặc định
@@ -55,7 +57,10 @@ migrate_old_skills_to_expertises()
 init_customer_profiles_table()
 init_conversation_states_table()
 init_conversations_table()
+start_db_flush_workers()
 init_message_stats_table()  # Khởi tạo bảng thống kê tin nhắn
+
+runtime_store.load_all()
 
 # Register admin blueprint
 from controls import admin_bp
@@ -215,4 +220,3 @@ if __name__ == '__main__':
         port=get_runtime_int("PORT", 5000),
         use_reloader=False,
     )
-

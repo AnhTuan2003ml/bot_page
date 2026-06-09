@@ -5,7 +5,7 @@ from datetime import datetime
 import requests
 
 from brain.pipeline import process_message
-from utils.config_service import get_runtime_config
+from utils.config_service import get_runtime_bool, get_runtime_config
 from services.runtime_context import build_runtime_context
 from .api_logger import log_facebook_get_name, log_facebook_send_message
 from .logger import debug, error, exception, info, warning
@@ -98,6 +98,8 @@ def get_log_file_path(message_type="received"):
 
 
 def log_message(sender_id, sender_name, message_text, message_type="received"):
+    if not get_runtime_bool("ENABLE_FILE_CONVERSATION_LOG", False):
+        return
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     name = sender_name if sender_name else sender_id
     clean_text = str(message_text or "").replace("\n", " | ").replace("\r", "")

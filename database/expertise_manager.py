@@ -31,9 +31,14 @@ def init_expertises_table():
                 persona_json TEXT NOT NULL DEFAULT '{}',
                 training_content TEXT DEFAULT '',
                 data_table TEXT DEFAULT '',
-                data_fields_json TEXT NOT NULL DEFAULT '[]'
+                data_fields_json TEXT NOT NULL DEFAULT '[]',
+                domain TEXT DEFAULT ''
             )
         """)
+        try:
+            conn.execute("ALTER TABLE expertises ADD COLUMN domain TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
 
 
 def _safe_json_text(value, default):
@@ -96,13 +101,14 @@ def _row_to_expertise(row):
         'training_content': row[5] or '',
         'data_table': row[6] or '',
         'data_fields_json': row[7] or '[]',
+        'domain': row[8] or '' if len(row) > 8 else '',
     }
 
 
 def list_expertises() -> List[Dict]:
     init_expertises_table()
     with _connect() as conn:
-        rows = conn.execute('SELECT id, name, job_title, description, persona_json, training_content, data_table, data_fields_json FROM expertises ORDER BY id').fetchall()
+        rows = conn.execute('SELECT id, name, job_title, description, persona_json, training_content, data_table, data_fields_json, domain FROM expertises ORDER BY id').fetchall()
     return [_row_to_expertise(r) for r in rows]
 
 
@@ -113,12 +119,12 @@ def get_expertise(expertise_id) -> Optional[Dict]:
     with _connect() as conn:
         row = None
         try:
-            row = conn.execute('SELECT id, name, job_title, description, persona_json, training_content, data_table, data_fields_json FROM expertises WHERE id = ?', (int(str(expertise_id)),)).fetchone()
+            row = conn.execute('SELECT id, name, job_title, description, persona_json, training_content, data_table, data_fields_json, domain FROM expertises WHERE id = ?', (int(str(expertise_id)),)).fetchone()
         except Exception:
             row = None
         if not row:
             key = str(expertise_id).strip()
-            for candidate in conn.execute('SELECT id, name, job_title, description, persona_json, training_content, data_table, data_fields_json FROM expertises').fetchall():
+            for candidate in conn.execute('SELECT id, name, job_title, description, persona_json, training_content, data_table, data_fields_json, domain FROM expertises').fetchall():
                 item = _row_to_expertise(candidate)
                 try:
                     persona = json.loads(item.get('persona_json') or '{}')
@@ -143,9 +149,10 @@ def create_expertise(data: Dict) -> int:
     training_content = data.get('training_content') or ''
     data_table = (data.get('data_table') or '').strip()
     data_fields_json = _safe_json_text(data.get('data_fields_json'), '[]')
+    domain = (data.get('domain') or '').strip()
     with _connect() as conn:
-        cur = conn.execute('INSERT INTO expertises (name, job_title, description, persona_json, training_content, data_table, data_fields_json) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                           (name, job_title, description, persona_json, training_content, data_table, data_fields_json))
+        cur = conn.execute('INSERT INTO expertises (name, job_title, description, persona_json, training_content, data_table, data_fields_json, domain) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                           (name, job_title, description, persona_json, training_content, data_table, data_fields_json, domain))
         return int(cur.lastrowid)
 
 
@@ -162,9 +169,10 @@ def update_expertise(expertise_id, data: Dict) -> bool:
     training_content = data.get('training_content') if data.get('training_content') is not None else current['training_content']
     data_table = data.get('data_table') if data.get('data_table') is not None else current['data_table']
     data_fields_json = _safe_json_text(data.get('data_fields_json') if data.get('data_fields_json') is not None else current['data_fields_json'], current['data_fields_json'] or '[]')
+    domain = data.get('domain') if data.get('domain') is not None else current.get('domain', '')
     with _connect() as conn:
-        conn.execute('UPDATE expertises SET name=?, job_title=?, description=?, persona_json=?, training_content=?, data_table=?, data_fields_json=? WHERE id=?',
-                     (name, job_title, description, persona_json, training_content or '', data_table or '', data_fields_json, current['id']))
+        conn.execute('UPDATE expertises SET name=?, job_title=?, description=?, persona_json=?, training_content=?, data_table=?, data_fields_json=?, domain=? WHERE id=?',
+                     (name, job_title, description, persona_json, training_content or '', data_table or '', data_fields_json, domain or '', current['id']))
     return True
 
 

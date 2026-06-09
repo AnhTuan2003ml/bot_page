@@ -8,6 +8,7 @@ from datetime import datetime
 from threading import Lock
 
 from utils.runtime_paths import INCOMING_API_LOG_DIR, OUTGOING_API_LOG_DIR, ensure_runtime_dirs
+from utils.config_service import get_runtime_bool
 
 ensure_runtime_dirs()
 
@@ -46,11 +47,12 @@ def log_api_call(direction, api_type, endpoint, method="GET", payload=None, resp
         if len(_recent_calls) > _max_recent:
             _recent_calls.pop()
 
-    try:
-        with open(get_log_file_path(direction), "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
-    except Exception as exc:
-        print(f"[API_LOGGER] Error writing log: {exc}")
+    if get_runtime_bool("ENABLE_RUNTIME_FILE_LOG", False):
+        try:
+            with open(get_log_file_path(direction), "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+        except Exception as exc:
+            print(f"[API_LOGGER] Error writing log: {exc}")
 
     _print_api_log(log_entry)
     return log_entry

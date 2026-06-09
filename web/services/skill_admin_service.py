@@ -3,7 +3,7 @@ from urllib.parse import unquote
 
 from database.dynamic_table_manager import ensure_dynamic_table, sanitize_table_name
 from database.expertise_manager import create_expertise, delete_expertise, get_expertise, list_expertises, update_expertise
-from services.runtime_context import clear_skill_context, clear_page_context
+from services.runtime_context import clear_inventory_context, clear_skill_context, clear_page_context
 
 
 def _fields_from_payload(data):
@@ -97,6 +97,7 @@ def _legacy_item(e):
         'workflow_prompt': json.dumps(persona.get('quy_trinh_lam_viec') or [], ensure_ascii=False),
         'intent_prompt': json.dumps(persona.get('quy_tac_phan_tich') or [], ensure_ascii=False),
         'business_domain': '',
+        'domain': e.get('domain') or '',
         'rag_content': e.get('training_content') or '',
         'rag_file_path': '',
         'training_content': e.get('training_content') or '',
@@ -131,8 +132,9 @@ def add_skill(data):
             'training_content': data.get('training_content') or data.get('rag_content') or '',
             'data_table': table,
             'data_fields_json': json.dumps(fields, ensure_ascii=False),
+            'domain': data.get('domain') or data.get('business_domain') or '',
         })
-        clear_skill_context()
+        clear_skill_context(expertise_id)
         return {'success': True, 'message': 'Đã tạo chuyên môn AI', 'id': expertise_id}, 200
     except Exception as exc:
         return {'success': False, 'error': str(exc)}, 500
@@ -155,8 +157,9 @@ def update_skill(name, data):
             'training_content': data.get('training_content') if data.get('training_content') is not None else data.get('rag_content', e.get('training_content') or ''),
             'data_table': table,
             'data_fields_json': json.dumps(fields, ensure_ascii=False) if fields else e.get('data_fields_json') or '[]',
+            'domain': data.get('domain') if data.get('domain') is not None else data.get('business_domain', e.get('domain') or ''),
         })
-        clear_skill_context()
+        clear_skill_context(e['id'])
         return {'success': True, 'message': 'Đã cập nhật chuyên môn AI'}, 200
     except Exception as exc:
         return {'success': False, 'error': str(exc)}, 500
@@ -197,6 +200,7 @@ def save_skill_fields(skill_name, fields):
     for f in fields or []:
         normalized.append({'key': f.get('field_key') or f.get('key') or f.get('field_label'), 'label': f.get('field_label') or f.get('label') or f.get('field_key'), 'required': bool(f.get('required'))})
     update_expertise(e['id'], {'data_fields_json': json.dumps(normalized, ensure_ascii=False)})
+    clear_skill_context(str(e['id']))
     return {'success': True, 'fields': _legacy_item(get_expertise(e['id']))['fields']}, 200
 
 # Keep item endpoints but route to dynamic table manager.
@@ -234,6 +238,7 @@ def create_skill_item(skill_name, data):
     if not row_id:
         return {'success': False, 'errors': ['Thiếu ID dữ liệu']}, 400
     upsert_dynamic_row(e['data_table'], row_id, _content_from_payload(data))
+    clear_inventory_context(e['id'])
     return {'success': True, 'item': {'id': row_id}}, 200
 
 def update_skill_item(skill_name, item_id, data):
@@ -242,6 +247,7 @@ def update_skill_item(skill_name, item_id, data):
     if not e or not e.get('data_table'):
         return {'success': False, 'errors': ['Chuyên môn chưa có bảng dữ liệu']}, 400
     upsert_dynamic_row(e['data_table'], str(item_id), _content_from_payload(data))
+    clear_inventory_context(e['id'])
     return {'success': True}, 200
 
 def delete_skill_item(skill_name, item_id):
@@ -249,4 +255,6 @@ def delete_skill_item(skill_name, item_id):
     e = get_expertise(unquote(skill_name))
     if not e or not e.get('data_table'):
         return {'success': False}, 404
-    return {'success': delete_dynamic_row(e['data_table'], str(item_id))}, 200
+    ok = delete_dynamic_row(e['data_table'], str(item_id))
+    clear_inventory_context(e['id'])
+    return {'success': ok}, 200

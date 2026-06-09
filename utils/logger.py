@@ -5,6 +5,7 @@ from datetime import datetime
 from threading import Lock
 
 from utils.runtime_paths import APP_LOG_FILE, ensure_runtime_dirs
+from utils.config_service import get_runtime_bool
 
 ensure_runtime_dirs()
 
@@ -19,12 +20,13 @@ def log(level, message, print_console=True):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     log_entry = f"[{timestamp}] [{level}] {message}\n"
 
-    with _file_lock:
-        try:
-            with open(_get_log_file(), "a", encoding="utf-8") as handle:
-                handle.write(log_entry)
-        except Exception as exc:
-            print(f"[LOGGER ERROR] Cannot write to file: {exc}")
+    if get_runtime_bool("ENABLE_RUNTIME_FILE_LOG", False):
+        with _file_lock:
+            try:
+                with open(_get_log_file(), "a", encoding="utf-8") as handle:
+                    handle.write(log_entry)
+            except Exception as exc:
+                print(f"[LOGGER ERROR] Cannot write to file: {exc}")
 
     if print_console:
         try:

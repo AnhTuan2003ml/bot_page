@@ -29,7 +29,7 @@ def load_config_cache(force: bool = False):
     global _CONFIG_CACHE_LOADED, _CONFIG_CACHE_UPDATED_AT
     with _CONFIG_LOCK:
         now = time.time()
-        fresh = _CONFIG_CACHE_LOADED and (now - _CONFIG_CACHE_UPDATED_AT) < _CONFIG_CACHE_TTL_SECONDS
+        fresh = _CONFIG_CACHE_LOADED
         if fresh and not force:
             return _CONFIG_CACHE
 

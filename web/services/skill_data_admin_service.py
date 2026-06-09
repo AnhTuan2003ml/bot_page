@@ -4,7 +4,7 @@ from urllib.parse import unquote
 from database.dynamic_table_manager import delete_dynamic_row, list_dynamic_rows, upsert_dynamic_row
 from database.expertise_manager import get_expertise, list_expertises, update_expertise
 from services import cache_service
-from services.runtime_context import clear_skill_context
+from services.runtime_context import clear_inventory_context, clear_skill_context
 
 
 def _legacy_skill(e):
@@ -201,6 +201,7 @@ def api_create_item(skill_name, payload):
     if not rid:
         return {'success': False, 'errors': ['Thiếu ID dữ liệu']}, 400
     upsert_dynamic_row(e['data_table'], rid, _content(d, e))
+    clear_inventory_context(e['id'])
     return {'success': True, 'item': {'id': rid}}, 200
 
 
@@ -210,6 +211,7 @@ def api_update_item(skill_name, item_id, payload):
         return {'success': False, 'errors': ['Chuyên môn chưa có bảng dữ liệu']}, 400
     d = _data(payload)
     upsert_dynamic_row(e['data_table'], str(item_id), _content(d, e))
+    clear_inventory_context(e['id'])
     return {'success': True}, 200
 
 
@@ -218,6 +220,7 @@ def api_delete_item(skill_name, item_id):
     if not e or not e.get('data_table'):
         return {'success': False, 'error': 'Không tìm thấy dữ liệu'}, 404
     ok = delete_dynamic_row(e['data_table'], str(item_id))
+    clear_inventory_context(e['id'])
     return {'success': ok}, 200 if ok else 404
 
 

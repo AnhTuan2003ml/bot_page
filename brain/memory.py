@@ -10,11 +10,16 @@ except Exception:  # pragma: no cover
     def get_base_dir():
         return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-from utils.config_service import get_runtime_int
+from utils.config_service import get_runtime_bool, get_runtime_int
 
 from .common_intents import normalize_text
 
 MAX_HISTORY_PER_USER = 100
+_MEMORY_CACHE = {}
+
+
+def _file_memory_enabled():
+    return get_runtime_bool("ENABLE_FILE_CONVERSATION_LOG", False)
 
 
 def _now_iso():
@@ -82,6 +87,8 @@ def _normalize_memory(chat_id, memory):
 
 
 def load_memory(chat_id):
+    if not _file_memory_enabled():
+        return _normalize_memory(chat_id, _MEMORY_CACHE.get(str(chat_id or "__global__")))
     path = get_chat_memory_path(chat_id)
     if not os.path.exists(path):
         return default_chat_memory(chat_id)
@@ -100,6 +107,9 @@ def load_memory(chat_id):
 
 
 def save_memory(chat_id, memory):
+    if not _file_memory_enabled():
+        _MEMORY_CACHE[str(chat_id or "__global__")] = _normalize_memory(chat_id, memory)
+        return True
     path = get_chat_memory_path(chat_id)
     memory = _normalize_memory(chat_id, memory)
     tmp_path = f"{path}.{os.getpid()}.tmp"
@@ -110,6 +120,13 @@ def save_memory(chat_id, memory):
 
 def update_customer_in_memory(memory, chat_id, name=None, pronoun=None, gender=None, **kwargs):
     customer = memory.setdefault("customer", default_chat_memory(chat_id)["customer"])
+    customer.pop("name", None)
+    customer.pop("pronoun", None)
+    customer.pop("gender", None)
+    customer.pop("gender_confidence", None)
+    customer.pop("notes", None)
+    customer["last_seen"] = _now_iso()
+    return dict(customer)
     if name:
         customer["name"] = name
         customer["pronoun"] = pronoun or customer.get("pronoun") or _infer_pronoun(name)
@@ -265,6 +282,8 @@ def clear_pending_search(chat_id, page_id=None):
 
 
 def migrate_legacy_memory():
+    if not _file_memory_enabled():
+        return 0
     legacy_path = os.path.join(get_base_dir(), "data", "conversation_memory.json")
     if not os.path.exists(legacy_path):
         return 0

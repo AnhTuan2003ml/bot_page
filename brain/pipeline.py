@@ -1,5 +1,6 @@
 import json
 import re
+import hashlib
 
 from ai_agent.model_client import call_intent_model, call_model
 from brain.knowledge_retriever import (
@@ -11,10 +12,37 @@ from brain.knowledge_retriever import (
     parse_training_records,
     retrieve_knowledge,
 )
-from database.conversation_manager import add_conversation, get_recent_conversations
-from database.conversation_state_manager import get_conversation_state, upsert_conversation_state
-from database.dynamic_table_manager import list_dynamic_rows, search_dynamic_rows
+from domains.registry import get_domain_handler
+from services import cache_service
+from services.search_index import SearchIndex
+from services.state_buffer import get_history as get_memory_history, get_state, set_state, add_log
 from utils.logger import debug
+
+
+
+# Backward-compatible names for tests and older integrations. These wrappers now
+# use the buffered state/log layer, so production no longer writes DB
+# synchronously on every message.
+def get_conversation_state(page_id, sender_id, expertise_id):
+    return get_state(page_id, sender_id, expertise_id)
+
+
+def upsert_conversation_state(page_id, sender_id, expertise_id, state):
+    return set_state(page_id, sender_id, expertise_id, state)
+
+
+def add_conversation(page_id, sender_id, expertise_id, role, message):
+    return add_log(page_id, sender_id, expertise_id, role, message)
+
+
+def get_recent_conversations(page_id, sender_id, expertise_id=None, limit=10):
+    return get_memory_history(page_id, sender_id, expertise_id or 0, limit=limit)
+
+
+# Compatibility injection points for direct pipeline tests. Production runtime
+# always supplies a prebuilt SearchIndex in RuntimeContext.
+list_dynamic_rows = None
+search_dynamic_rows = None
 
 
 VALID_INTENTS = {
@@ -46,11 +74,17 @@ INTENT_ALIASES = {
 }
 ENTITY_KEYS = {
     "item_code", "plate", "province", "vehicle_type", "price_range", "budget", "status",
-    "offer_price",
+    "offer_price", "product_type", "category", "size", "color",
+    "gender", "height", "weight", "fit", "occasion", "material",
+    # Internal domain metadata that must survive context merge. It is not user
+    # profile data and is used by domain handlers to render multi-intent replies.
+    "_intents",
 }
 STATE_KEYS = {
-    "selected_item", "selected_plate", "selected_province", "vehicle_type",
-    "budget", "last_intent", "last_results", "pending_question",
+    "selected_item", "selected_plate", "selected_product", "selected_province",
+    "product_type", "category", "vehicle_type", "size", "color", "budget",
+    "gender", "height", "weight", "fit", "occasion", "material",
+    "last_intent", "last_results", "pending_question", "updated_at",
 }
 PLATE_MEMORY_INTENTS = {"ASK_PRICE", "ASK_STATUS", "NEGOTIATE_PRICE"}
 VEHICLE_DISPLAY = {"oto": "ô tô", "xe_may": "xe máy"}
@@ -82,6 +116,112 @@ def _extract_json(text):
             return {}
 
 
+def _training_hash(training_content):
+    return hashlib.sha1(str(training_content or "").encode("utf-8", errors="ignore")).hexdigest()
+
+
+def get_cached_training_records(expertise_id, training_content):
+    key = f"rag_records:{expertise_id}:{_training_hash(training_content)}"
+    return cache_service.get_or_set(key, lambda: parse_training_records(training_content), 600) or []
+
+
+def get_skill_domain_label(expertise, persona_json) -> str:
+    persona = _json_loads(persona_json, {}) or {}
+    thong_tin = persona.get("thong_tin") if isinstance(persona.get("thong_tin"), dict) else {}
+    for value in [
+        thong_tin.get("vai_tro"),
+        thong_tin.get("mo_ta"),
+        persona.get("mo_ta"),
+        (expertise or {}).get("name"),
+        (expertise or {}).get("key"),
+        (expertise or {}).get("job_title"),
+    ]:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return "chăm sóc khách hàng"
+
+
+def _extract_template_sentence(content):
+    text = str(content or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"['\"“”‘’]([^'\"“”‘’]{8,220})['\"“”‘’]", text)
+    if match:
+        return match.group(1).strip()
+    match = re.search(r"(?:ví dụ|vi du)\s*[:：]\s*(.+)", text, flags=re.I)
+    if match:
+        return re.split(r"[\r\n]", match.group(1).strip())[0].strip(" -")
+    for line in text.splitlines():
+        line = line.strip(" -")
+        if 8 <= len(line) <= 220 and any(token in _norm_text(line) for token in ["ben e", "minh", "can"]):
+            return line
+    return ""
+
+
+def _record_matches_intent(hit, intent):
+    intent_norm = _norm_text(intent).replace(" ", "_")
+    blob = " ".join([
+        str(hit.get("id") or ""),
+        str(hit.get("title") or ""),
+        " ".join(str(tag) for tag in hit.get("tags") or []),
+    ])
+    blob_norm = _norm_text(blob).replace(" ", "_")
+    if intent_norm and intent_norm.lower() in blob_norm:
+        return True
+    if intent == "GREETING":
+        return any(tag in blob_norm for tag in ["chao_hoi", "alo", "tin_dau", "greeting"]) or (
+            "style_sale_" in blob_norm and "_002" in blob_norm
+        )
+    return False
+
+
+def get_skill_reply_template(intent, expertise, persona_json, knowledge_hits) -> str | None:
+    del expertise, persona_json
+    for hit in knowledge_hits or []:
+        if not _record_matches_intent(hit, str(intent or "").upper()):
+            continue
+        sentence = _extract_template_sentence(hit.get("content"))
+        if sentence:
+            return sentence
+    return None
+
+
+def _fallback_by_domain(domain_label):
+    domain_norm = _norm_text(domain_label)
+    if "quan ao" in domain_norm or "thoi trang" in domain_norm:
+        return "bên e tư vấn quần áo ạ, mình cần tìm áo, quần hay set đồ ạ"
+    if "bien so" in domain_norm or "bien xe" in domain_norm:
+        return "bên e tư vấn biển số ạ, cần tìm biển tỉnh nào ạ"
+    if "cham soc" in domain_norm or "khach hang" in domain_norm:
+        return "bên e hỗ trợ chăm sóc khách hàng ạ, mình cần hỗ trợ vấn đề gì ạ"
+    return f"bên e hỗ trợ {domain_label} ạ, mình cần tư vấn nội dung gì ạ"
+
+
+def _is_domain_catalog_question(message):
+    norm = _norm_text(message)
+    return any(phrase in norm for phrase in [
+        "tu van san pham gi", "co nhung san pham nao", "shop ban gi",
+        "ben minh ban gi", "ben minh tu van gi", "san pham nao",
+    ])
+
+
+def _domain_intro_reply(domain_label):
+    norm = _norm_text(domain_label)
+    if "quan ao" in norm or "thoi trang" in norm:
+        return "bên e tư vấn và bán quần áo ạ, hỗ trợ chọn mẫu, size, màu, chất liệu và phối đồ ạ"
+    if "bien so" in norm or "bien xe" in norm:
+        return "bên e tư vấn biển số ạ, hỗ trợ tìm biển theo tỉnh, loại xe, ngân sách và thủ tục ạ"
+    return f"bên e hỗ trợ {domain_label} ạ, mình cần tư vấn nội dung gì ạ"
+
+
+def build_greeting_reply(expertise, persona_json, knowledge_hits):
+    template = get_skill_reply_template("GREETING", expertise, persona_json, knowledge_hits)
+    if template:
+        return template
+    return _fallback_by_domain(get_skill_domain_label(expertise, persona_json))
+
+
 def _empty_entities():
     return {key: "" for key in ENTITY_KEYS}
 
@@ -106,6 +246,18 @@ def _norm_text(value):
 
 def _compact_norm(value):
     return re.sub(r"[^a-z0-9]", "", _norm_text(value))
+
+
+def _domain_from_records(records):
+    blob = _norm_text(" ".join(
+        " ".join([str(r.get("id") or ""), str(r.get("title") or ""), " ".join(str(t) for t in r.get("tags") or [])])
+        for r in (records or []) if isinstance(r, dict)
+    ))
+    if "style sale clothes" in blob or "style_sale_clothes" in blob or "quan ao" in blob:
+        return "fashion"
+    if "style sale bien" in blob or "style_sale_bien" in blob or "bien so" in blob:
+        return "license_plate"
+    return ""
 
 
 def _has_discount_signal(message):
@@ -199,6 +351,9 @@ def merge_entities_with_state(entities: dict, state: dict, message: str) -> dict
         merged["vehicle_type"] = normalize_vehicle_type(merged["vehicle_type"])
     elif followup and (state or {}).get("vehicle_type"):
         merged["vehicle_type"] = normalize_vehicle_type((state or {}).get("vehicle_type"))
+    for key in ("product_type", "category", "size", "color"):
+        if not merged.get(key) and followup and (state or {}).get(key):
+            merged[key] = (state or {}).get(key)
 
     if merged.get("plate") or merged.get("item_code"):
         plate = merged.get("plate") or merged.get("item_code")
@@ -220,7 +375,7 @@ def _plate_from_message(message):
 
 
 def _extract_local_entities(message):
-    norm = _norm_text(message)
+    norm = _norm_text(message).replace("duockhong", "duoc khong")
     entities = _empty_entities()
     plate = _plate_from_message(message)
     entities["plate"] = plate
@@ -257,6 +412,31 @@ def _extract_local_entities(message):
     province_alias = normalize_province(message)
     if province_alias in set(PROVINCE_DISPLAY.values()):
         entities["province"] = province_alias
+    product_match = re.search(
+        r"\b(ao\s+(?:so\s*mi|thun|khoac|polo)|quan\s+(?:short|jean|kaki|tay|au)|set\s+do|vay|dam)\b",
+        norm,
+    )
+    if product_match:
+        product_norm = product_match.group(1).replace("so mi", "somi").strip()
+        product_labels = {
+            "quan short": "quần short",
+            "quan jean": "quần jean",
+            "quan kaki": "quần kaki",
+            "quan tay": "quần tây",
+            "quan au": "quần âu",
+            "ao somi": "áo sơ mi",
+            "ao thun": "áo thun",
+            "ao khoac": "áo khoác",
+            "ao polo": "áo polo",
+            "set do": "set đồ",
+            "vay": "váy",
+            "dam": "đầm",
+        }
+        entities["product_type"] = product_labels.get(product_norm, product_norm)
+    for size in ["xs", "s", "m", "l", "xl", "xxl"]:
+        if re.search(rf"\bsize\s*{size}\b|\b{size}\b", norm):
+            entities["size"] = size.upper()
+            break
     return entities
 
 
@@ -296,7 +476,7 @@ def normalize_intent(analysis: dict, message: str, rag_route: dict | None = None
     if intent not in VALID_INTENTS:
         intent = "UNKNOWN"
 
-    norm = _norm_text(message)
+    norm = _norm_text(message).replace("duockhong", "duoc khong")
     has_discount = _has_discount_signal(message)
     has_procedure = _has_procedure_signal(message)
     multi_intents = []
@@ -322,17 +502,21 @@ def normalize_intent(analysis: dict, message: str, rag_route: dict | None = None
         intent = "ASK_STATUS"
     elif has_specific_item(message) and any(value in norm for value in ["gia", "bao nhieu", "nhieu tien"]):
         intent = "ASK_PRICE"
+    elif entities.get("product_type") or any(value in norm for value in ["ao ", "quan ", "set do", "vay", "dam"]):
+        intent = "SEARCH_ITEM"
     elif any(value in norm for value in ["bien", "dau so", "ma bien", "tinh", "thanh", "xe may", "o to", "oto"]):
         intent = "SEARCH_PLATE"
 
-    specific = bool(entities["plate"] or entities["item_code"])
+    specific = bool(entities["plate"] or entities["item_code"] or entities.get("product_type"))
     if intent == "ASK_DISCOUNT" and specific:
         intent = "NEGOTIATE_PRICE"
     need_data = intent in {"SEARCH_ITEM", "SEARCH_PLATE", "ASK_PRICE"}
     if intent == "NEGOTIATE_PRICE":
         need_data = bool(specific)
-    if intent in {"ASK_STATUS", "ASK_PROCEDURE"}:
+    if intent in {"ASK_STATUS", "ASK_COLOR", "ASK_SIZE"}:
         need_data = specific
+    if intent == "ASK_PROCEDURE":
+        need_data = bool(entities["plate"] or entities["item_code"])
     if len(multi_intents) > 1 and not specific:
         need_data = False
     if confidence >= 0.85 and rag_route.get("need_data_hint") is False and intent in NO_DATA_INTENTS:
@@ -437,6 +621,10 @@ def _build_data_query(message, analysis, state):
     parts = [
         entities.get("plate"),
         entities.get("item_code"),
+        entities.get("product_type"),
+        entities.get("category"),
+        entities.get("size"),
+        entities.get("color"),
         entities.get("province"),
         entities.get("vehicle_type"),
         entities.get("budget"),
@@ -598,6 +786,9 @@ def _build_structured_filters(analysis):
     entities = (analysis or {}).get("entities") or {}
     return {
         "plate": entities.get("plate") or entities.get("item_code") or "",
+        "product_type": entities.get("product_type") or entities.get("category") or "",
+        "size": entities.get("size") or "",
+        "color": entities.get("color") or "",
         "province": entities.get("province") or "",
         "vehicle_type": entities.get("vehicle_type") or "",
         "status": entities.get("status") or "",
@@ -607,6 +798,9 @@ def _build_structured_filters(analysis):
 def _normalized_filters(filters):
     return {
         "plate": _compact_norm((filters or {}).get("plate")),
+        "product_type": _norm_text((filters or {}).get("product_type")),
+        "size": _norm_text((filters or {}).get("size")),
+        "color": _norm_text((filters or {}).get("color")),
         "province": _norm_text(normalize_province((filters or {}).get("province"))),
         "vehicle_type": _norm_text(normalize_vehicle_type((filters or {}).get("vehicle_type"))),
         "status": _norm_text((filters or {}).get("status")),
@@ -614,18 +808,24 @@ def _normalized_filters(filters):
 
 
 def _structured_filters_are_clear(filters):
-    filters = filters or {}
-    return bool(filters.get("province") and filters.get("vehicle_type"))
+    return any((filters or {}).values())
 
 
 def _row_matches_structured_filters(row, filters, data_fields_json=None):
     data = _row_payload(row)
+    blob = _norm_text(" ".join(str(value) for value in data.values()))
     code = _pick_field(data, "code", data_fields_json) or (row or {}).get("id") or ""
     province = _pick_field(data, "province", data_fields_json)
     vehicle = _pick_field(data, "vehicle", data_fields_json)
     status = _pick_field(data, "status", data_fields_json)
     normalized = _normalized_filters(filters)
     if normalized["plate"] and normalized["plate"] not in _compact_norm(code):
+        return False
+    if normalized["product_type"] and normalized["product_type"] not in blob:
+        return False
+    if normalized["size"] and normalized["size"] not in blob:
+        return False
+    if normalized["color"] and normalized["color"] not in blob:
         return False
     if normalized["province"] and normalized["province"] != _norm_text(normalize_province(province)):
         return False
@@ -636,16 +836,50 @@ def _row_matches_structured_filters(row, filters, data_fields_json=None):
     return True
 
 
-def search_structured_rows(table_name, analysis, data_fields_json=None, limit=10):
+def search_structured_rows(search_index, analysis, data_fields_json=None, limit=10):
     filters = _build_structured_filters(analysis)
     if not any(filters.values()):
         return [], filters, _normalized_filters(filters), "none"
-    rows = list_dynamic_rows(table_name, limit=10000)
-    matched = [
-        row for row in rows
-        if _row_matches_structured_filters(row, filters, data_fields_json)
-    ]
-    return matched[:int(limit or 10)], filters, _normalized_filters(filters), "structured"
+    rows = search_index.search(filters, limit=limit) if search_index else []
+    return rows, filters, _normalized_filters(filters), "structured"
+
+
+def build_no_data_reply(message=None, analysis=None, knowledge_hits=None, state=None, last_results=None, data_fields_json=None):
+    if analysis is None and isinstance(message, dict):
+        analysis = message
+    entities = (analysis or {}).get("entities") or {}
+    domain_label = (analysis or {}).get("domain_label") or "sản phẩm"
+    domain_norm = _norm_text(domain_label)
+    product_type = str(entities.get("product_type") or entities.get("category") or "").strip()
+    if product_type and ("quan ao" in domain_norm or "thoi trang" in domain_norm):
+        return (
+            f"hiện bên e chưa thấy mẫu {product_type} phù hợp ạ\n"
+            f"mình cần {product_type} nam hay nữ, màu/form nào để e check thêm ạ"
+        )
+
+    province = normalize_province(entities.get("province") or (state or {}).get("selected_province") or "")
+    vehicle_type = normalize_vehicle_type(entities.get("vehicle_type") or "")
+    has_province = bool(province)
+    has_vehicle = vehicle_type in set(VEHICLE_DISPLAY.values())
+    if _is_plate_context(analysis) or str((analysis or {}).get("intent") or "") == "SEARCH_PLATE":
+        if has_province and has_vehicle:
+            lines = [f"hiện bên e chưa thấy biển {vehicle_type} {province} ạ"]
+            related = _related_last_result_line(
+                province, vehicle_type, last_results or (state or {}).get("last_results") or [],
+                data_fields_json,
+            )
+            if related:
+                lines.append(related)
+            return "\n".join(lines)
+        if has_province:
+            return f"hiện bên e chưa thấy biển {province} phù hợp ạ\ncần biển xe máy hay ô tô để bên e check thêm ạ"
+        if has_vehicle:
+            return f"hiện bên e chưa thấy biển {vehicle_type} phù hợp ạ\ncần biển tỉnh nào để bên e check thêm ạ"
+        return "hiện bên e chưa thấy biển phù hợp ạ\ncần biển xe máy hay ô tô, tỉnh nào để bên e check thêm ạ"
+
+    if "quan ao" in domain_norm or "thoi trang" in domain_norm:
+        return "hiện bên e chưa thấy mẫu phù hợp ạ\nmình cần áo, quần hay set đồ để e check thêm ạ"
+    return f"hiện bên e chưa thấy dữ liệu phù hợp trong {domain_label} ạ\nmình cần tư vấn nội dung nào để e check thêm ạ"
 
 
 def build_data_reply(rows, analysis, data_fields_json=None):
@@ -721,6 +955,14 @@ def build_no_data_reply(message=None, analysis=None, knowledge_hits=None, state=
         message = ""
     del message, knowledge_hits
     entities = (analysis or {}).get("entities") or {}
+    domain_label = (analysis or {}).get("domain_label") or "sản phẩm"
+    domain_norm = _norm_text(domain_label)
+    product_type = str(entities.get("product_type") or entities.get("category") or "").strip()
+    if product_type and ("quan ao" in domain_norm or "thoi trang" in domain_norm):
+        return (
+            f"hiện bên e chưa thấy mẫu {product_type} phù hợp ạ\n"
+            f"mình cần {product_type} nam hay nữ, màu/form nào để e check thêm ạ"
+        )
     province = normalize_province(entities.get("province") or (state or {}).get("selected_province") or "")
     vehicle_type = normalize_vehicle_type(entities.get("vehicle_type") or "")
     has_province = bool(province)
@@ -752,10 +994,9 @@ def build_no_data_reply(message=None, analysis=None, knowledge_hits=None, state=
             "hiện bên e chưa thấy biển phù hợp ạ\n"
             "cần biển xe máy hay ô tô, tỉnh nào để bên e check thêm ạ"
         )
-    return (
-        "hiện bên e chưa thấy lựa chọn phù hợp ạ\n"
-        "cần loại nào, khu vực nào để bên e check thêm ạ"
-    )
+    if "quan ao" in domain_norm or "thoi trang" in domain_norm:
+        return "hiện bên e chưa thấy mẫu phù hợp ạ\nmình cần áo, quần hay set đồ để e check thêm ạ"
+    return f"hiện bên e chưa thấy dữ liệu phù hợp trong {domain_label} ạ\nmình cần tư vấn nội dung nào để e check thêm ạ"
 
 
 def _related_last_result_line(province, vehicle_type, last_results, data_fields_json=None):
@@ -974,6 +1215,44 @@ def build_data_reply(rows, analysis, data_fields_json=None):
     return "\n".join(lines) if lines else build_no_data_reply(analysis=analysis)
 
 
+def build_no_data_reply(message=None, analysis=None, knowledge_hits=None, state=None, last_results=None, data_fields_json=None):
+    if analysis is None and isinstance(message, dict):
+        analysis = message
+    entities = (analysis or {}).get("entities") or {}
+    domain_label = (analysis or {}).get("domain_label") or "sản phẩm"
+    domain_norm = _norm_text(domain_label)
+    product_type = str(entities.get("product_type") or entities.get("category") or "").strip()
+    if product_type and ("quan ao" in domain_norm or "thoi trang" in domain_norm):
+        return (
+            f"hiện bên e chưa thấy mẫu {product_type} phù hợp ạ\n"
+            f"mình cần {product_type} nam hay nữ, màu/form nào để e check thêm ạ"
+        )
+
+    province = normalize_province(entities.get("province") or (state or {}).get("selected_province") or "")
+    vehicle_type = normalize_vehicle_type(entities.get("vehicle_type") or "")
+    has_province = bool(province)
+    has_vehicle = vehicle_type in set(VEHICLE_DISPLAY.values())
+    if _is_plate_context(analysis) or str((analysis or {}).get("intent") or "") == "SEARCH_PLATE":
+        if has_province and has_vehicle:
+            lines = [f"hiện bên e chưa thấy biển {vehicle_type} {province} ạ"]
+            related = _related_last_result_line(
+                province, vehicle_type, last_results or (state or {}).get("last_results") or [],
+                data_fields_json,
+            )
+            if related:
+                lines.append(related)
+            return "\n".join(lines)
+        if has_province:
+            return f"hiện bên e chưa thấy biển {province} phù hợp ạ\ncần biển xe máy hay ô tô để bên e check thêm ạ"
+        if has_vehicle:
+            return f"hiện bên e chưa thấy biển {vehicle_type} phù hợp ạ\ncần biển tỉnh nào để bên e check thêm ạ"
+        return "hiện bên e chưa thấy biển phù hợp ạ\ncần biển xe máy hay ô tô, tỉnh nào để bên e check thêm ạ"
+
+    if "quan ao" in domain_norm or "thoi trang" in domain_norm:
+        return "hiện bên e chưa thấy mẫu phù hợp ạ\nmình cần áo, quần hay set đồ để e check thêm ạ"
+    return f"hiện bên e chưa thấy dữ liệu phù hợp trong {domain_label} ạ\nmình cần tư vấn nội dung nào để e check thêm ạ"
+
+
 def build_negotiate_reply(rows, message, analysis, knowledge_hits=None, state=None, data_fields_json=None):
     del message, knowledge_hits
     entities = (analysis or {}).get("entities") or {}
@@ -1004,29 +1283,33 @@ def build_negotiate_reply(rows, message, analysis, knowledge_hits=None, state=No
     )
 
 
-def build_knowledge_reply(analysis, state=None, persona_json=None, knowledge_hits=None):
-    del state, persona_json, knowledge_hits
+def build_knowledge_reply(analysis, state=None, persona_json=None, knowledge_hits=None, expertise=None):
+    domain_label = (analysis or {}).get("domain_label") or get_skill_domain_label(expertise or {}, persona_json)
+    template = get_skill_reply_template((analysis or {}).get("intent"), expertise or {}, persona_json, knowledge_hits)
+    if template:
+        return template
     intents = list((analysis or {}).get("intents") or [])
     intent = str((analysis or {}).get("intent") or "")
     if intent and intent not in intents:
         intents.append(intent)
     intent_set = set(intents)
+    plate_context = _is_plate_context(knowledge_hits)
     if {"ASK_DISCOUNT", "ASK_PROCEDURE"}.issubset(intent_set):
-        return (
-            "chủ biển linh động giá được ạ\n"
-            "bên e hỗ trợ sang tên/định danh lên căn cước ạ\n"
-            "ưng biển nào bên e check giá tốt và thủ tục cụ thể ạ"
-        )
+        if plate_context:
+            return (
+                "chủ biển linh động giá được ạ\n"
+                "bên e hỗ trợ sang tên/định danh lên căn cước ạ\n"
+                "ưng biển nào bên e check giá tốt và thủ tục cụ thể ạ"
+            )
+        return f"bên e hỗ trợ {domain_label} ạ\nmình gửi lựa chọn cụ thể để e check giá và quy trình phù hợp ạ"
     if "ASK_DISCOUNT" in intent_set:
-        return (
-            "chủ biển linh động giá được ạ\n"
-            "ưng biển nào bên e check giá tốt ạ"
-        )
+        if plate_context:
+            return "chủ biển linh động giá được ạ\nưng biển nào bên e check giá tốt ạ"
+        return f"bên e có thể kiểm tra hỗ trợ giá theo {domain_label} ạ\nmình gửi lựa chọn cụ thể để e check ạ"
     if "ASK_PROCEDURE" in intent_set:
-        return (
-            "bên e hỗ trợ sang tên/định danh lên căn cước ạ\n"
-            "ưng biển nào bên e check thủ tục cụ thể ạ"
-        )
+        if plate_context:
+            return "bên e hỗ trợ sang tên/định danh lên căn cước ạ\nưng biển nào bên e check thủ tục cụ thể ạ"
+        return f"bên e hỗ trợ quy trình trong {domain_label} ạ\nmình cần tư vấn bước nào để e check ạ"
     return ""
 
 
@@ -1039,12 +1322,11 @@ def _find_contact(persona_json, knowledge_hits):
     return match.group(1) if match else ""
 
 
-def _deterministic_reply(intent, state, persona_json, knowledge_hits):
+def _deterministic_reply(intent, state, persona_json, knowledge_hits, expertise=None):
+    domain_label = get_skill_domain_label(expertise or {}, persona_json)
     plate_context = _is_plate_context(knowledge_hits)
     if intent == "GREETING":
-        if plate_context:
-            return "bên e tư vấn biển số ạ, cần tìm biển tỉnh nào ạ"
-        return "bên e tư vấn ạ, cần tìm loại nào hoặc khu vực nào ạ"
+        return build_greeting_reply(expertise or {}, persona_json, knowledge_hits)
     if intent == "ASK_PROCEDURE":
         if plate_context:
             return (
@@ -1062,8 +1344,8 @@ def _deterministic_reply(intent, state, persona_json, knowledge_hits):
                 "ưng biển nào bên e check giá tốt ạ"
             )
         return (
-            "bên e linh động giá được ạ\n"
-            "ưng lựa chọn nào bên e check giá tốt ạ"
+            f"bên e có thể kiểm tra hỗ trợ giá theo {domain_label} ạ\n"
+            "mình gửi lựa chọn cụ thể để e check ạ"
         )
     if intent == "NEGOTIATE_PRICE":
         if (state or {}).get("selected_plate") or (state or {}).get("selected_item"):
@@ -1072,8 +1354,8 @@ def _deterministic_reply(intent, state, persona_json, knowledge_hits):
                 "đề xuất mức mong muốn bên e báo lại ạ"
             )
         return (
-            "bên e linh động giá được ạ\n"
-            "ưng lựa chọn nào bên e check giá tốt ạ"
+            f"bên e có thể check lại theo {domain_label} ạ\n"
+            "mình gửi lựa chọn cụ thể để e báo lại ạ"
         )
     if intent == "ASK_ZALO":
         contact = _find_contact(persona_json, knowledge_hits)
@@ -1169,6 +1451,16 @@ def _clean_state(state, analysis, rows):
         previous["selected_province"] = normalize_province(entities.get("province") or row_province)
     if entities.get("vehicle_type") or row_vehicle:
         previous["vehicle_type"] = normalize_vehicle_type(entities.get("vehicle_type") or row_vehicle)
+    if entities.get("product_type"):
+        previous["product_type"] = entities["product_type"]
+        previous["selected_product"] = entities["product_type"]
+        previous["selected_item"] = entities["product_type"]
+    if entities.get("category"):
+        previous["category"] = entities["category"]
+    if entities.get("size"):
+        previous["size"] = entities["size"]
+    if entities.get("color"):
+        previous["color"] = entities["color"]
     if entities.get("budget"):
         previous["budget"] = entities["budget"]
     previous["last_intent"] = (analysis or {}).get("intent") or ""
@@ -1221,14 +1513,53 @@ def process_message(
     training_content = expertise.get("training_content") or page_config.get("training_content") or ""
     data_table = expertise.get("data_table") or page_config.get("data_table") or ""
     data_fields_json = expertise.get("data_fields_json") or page_config.get("data_fields_json") or "[]"
+    domain_label = page_config.get("domain_label") or expertise.get("domain_label") or get_skill_domain_label(expertise, persona_json)
+    search_index = page_config.get("search_index") or expertise.get("search_index")
+    if search_index is None:
+        compatibility_rows = page_config.get("data_rows") or expertise.get("data_rows") or []
+        if not compatibility_rows and callable(list_dynamic_rows):
+            compatibility_rows = list_dynamic_rows(data_table, limit=10000)
+        search_index = SearchIndex(
+            compatibility_rows,
+            domain=page_config.get("domain") or expertise.get("domain") or "",
+            data_fields_json=data_fields_json,
+        )
     state = get_conversation_state(page_id, sender_id, expertise_id)
-    history = get_recent_conversations(page_id, sender_id, limit=10)
-    records = parse_training_records(training_content)
-    rag_route = infer_intent_from_knowledge(user_message, records)
+    history = get_memory_history(page_id, sender_id, expertise_id, limit=10)
+    records = (
+        page_config.get("knowledge_records")
+        or expertise.get("knowledge_records")
+        or expertise.get("parsed_knowledge_records")
+        or []
+    )
+    if not records and training_content:
+        records = parse_training_records(training_content)
+    domain = page_config.get("domain") or expertise.get("domain") or _domain_from_records(records) or "generic_commerce"
+    page_config.setdefault("domain", domain)
+    page_config.setdefault("domain_label", domain_label)
+    page_config.setdefault("data_table", data_table)
+    page_config.setdefault("data_fields_json", data_fields_json)
+    handler = get_domain_handler(domain)
+    if getattr(search_index, "domain", "") in {"", "generic_commerce"} and domain != getattr(search_index, "domain", ""):
+        try:
+            search_index.domain = domain
+        except Exception:
+            pass
+    user_message_for_domain = handler.normalize_message(user_message)
+    rag_route = infer_intent_from_knowledge(user_message_for_domain, records, domain=domain)
     knowledge_hits = rag_route["knowledge_hits"]
 
+    base_analysis = normalize_intent({}, user_message_for_domain, rag_route)
+    domain_pre_analysis = handler.infer_intent(
+        user_message_for_domain, rag_route, base_analysis, state, page_config
+    )
+    domain_pre_intent = str(domain_pre_analysis.get("intent") or "UNKNOWN")
+    domain_can_skip_llm = domain_pre_intent not in {"UNKNOWN", "GENERAL_CHAT"}
+
     if not str(user_message or "").strip():
-        analysis = normalize_intent({}, user_message, rag_route)
+        analysis = domain_pre_analysis
+    elif domain_can_skip_llm:
+        analysis = domain_pre_analysis
     elif (
         rag_route["confidence"] >= 0.85
         and (
@@ -1236,7 +1567,7 @@ def process_message(
             or is_identity_or_pronoun_message(user_message)
         )
     ):
-        analysis = normalize_intent({}, user_message, rag_route)
+        analysis = domain_pre_analysis
     else:
         analysis = analyze_message(
             persona_json,
@@ -1244,14 +1575,20 @@ def process_message(
             None,
             state,
             history,
-            user_message,
+            user_message_for_domain,
             page_config=page_config,
             intent_hint=rag_route["intent_hint"],
             knowledge_hits=knowledge_hits,
             rag_route=rag_route,
         )
 
-    offer_price = _extract_offer_price(user_message, state)
+    # Domain handler has priority over generic LLM/legacy routing.
+    analysis = handler.infer_intent(user_message_for_domain, rag_route, analysis, state, page_config)
+    extracted_entities = handler.extract_entities(user_message_for_domain, analysis, state, page_config)
+    if extracted_entities:
+        analysis.setdefault("entities", {}).update({key: value for key, value in extracted_entities.items() if value not in (None, "")})
+
+    offer_price = _extract_offer_price(user_message_for_domain, state)
     if offer_price:
         analysis.setdefault("entities", {})["offer_price"] = offer_price
         analysis["intent"] = "NEGOTIATE_PRICE"
@@ -1262,38 +1599,41 @@ def process_message(
             or state.get("selected_item")
         )
         analysis["reply_mode"] = "NEGOTIATE_REPLY"
-    is_followup = is_followup_query(user_message)
+    is_followup = is_followup_query(user_message_for_domain)
     entities_before_merge = dict((analysis or {}).get("entities") or {})
     state_before_merge = {key: state.get(key) for key in STATE_KEYS if state.get(key) not in (None, "", [])}
-    analysis["entities"] = merge_entities_with_state(analysis.get("entities") or {}, state, user_message)
+    analysis["entities"] = merge_entities_with_state(analysis.get("entities") or {}, state, user_message_for_domain)
+    analysis["domain_label"] = domain_label
     knowledge_hits = []
     hit_ids = set()
     retrieve_intents = list(analysis.get("intents") or [analysis["intent"]])
     if analysis["intent"] not in retrieve_intents:
         retrieve_intents.append(analysis["intent"])
     for retrieve_intent in retrieve_intents:
-        for hit in retrieve_knowledge(user_message, records, intent=retrieve_intent, top_k=8):
+        for hit in retrieve_knowledge(user_message_for_domain, records, intent=retrieve_intent, top_k=8, domain=domain):
             hit_id = str(hit.get("id") or "")
             if hit_id not in hit_ids:
                 knowledge_hits.append(hit)
                 hit_ids.add(hit_id)
     analysis["knowledge_hits"] = knowledge_hits
-    search_data = should_search_data(data_table, analysis, state)
+    search_data = handler.should_search(analysis.get("intent"), analysis.get("entities") or {}, state, page_config)
     rows = []
     structured_filters = {}
     normalized_filters = {}
     search_mode = "none"
     no_data_reason = ""
     if search_data:
-        query = _build_data_query(user_message, analysis, state)
+        query = _build_data_query(user_message_for_domain, analysis, state)
         try:
-            rows, structured_filters, normalized_filters, search_mode = search_structured_rows(
-                data_table, analysis, data_fields_json, limit=10
-            )
+            structured_filters = handler.build_search_filters(
+                analysis.get("intent"), analysis.get("entities") or {}, state, page_config
+            ) or {}
+            normalized_filters = {key: _norm_text(value) for key, value in structured_filters.items() if value not in (None, "")}
+            rows = search_index.search(structured_filters, limit=10) if search_index else []
+            search_mode = "memory_structured"
             if not rows and not _structured_filters_are_clear(structured_filters) and query:
-                rows = search_dynamic_rows(data_table, query, limit=10)
-                rows = filter_data_rows(rows, analysis, data_fields_json)
-                search_mode = "fulltext"
+                rows = search_index.search({}, query=query, limit=10) if search_index else []
+                search_mode = "memory_fulltext"
             if not rows:
                 if structured_filters.get("province") and structured_filters.get("vehicle_type"):
                     no_data_reason = "no rows for province+vehicle_type"
@@ -1301,6 +1641,8 @@ def process_message(
                     no_data_reason = "no rows for province"
                 elif structured_filters.get("vehicle_type"):
                     no_data_reason = "no rows for vehicle_type"
+                elif structured_filters.get("product_type") or structured_filters.get("category"):
+                    no_data_reason = "no rows for product_type"
                 else:
                     no_data_reason = "no matching rows"
         except Exception as exc:
@@ -1309,53 +1651,71 @@ def process_message(
             search_mode = "none"
             no_data_reason = f"search error: {exc}"
 
-    if analysis["intent"] == "NEGOTIATE_PRICE":
-        reply = build_negotiate_reply(
-            rows,
-            user_message,
-            analysis,
-            knowledge_hits,
-            state=state,
-            data_fields_json=data_fields_json,
-        )
-        analysis["reply_mode"] = "NEGOTIATE_REPLY"
-    elif len(set(analysis.get("intents") or [])) > 1 and not analysis["need_data"]:
-        reply = build_knowledge_reply(analysis, state, persona_json, knowledge_hits)
-        if not reply:
-            reply = _deterministic_reply(
-                analysis["intent"], state, persona_json, knowledge_hits
-            )
-        analysis["reply_mode"] = "KNOWLEDGE_REPLY"
-    elif analysis["need_data"]:
-        if rows:
-            reply = build_data_reply(rows, analysis, data_fields_json)
-            analysis["reply_mode"] = "DATA_REPLY"
-        else:
-            reply = build_no_data_reply(
-                user_message,
+    reply = handler.render_reply(
+        analysis.get("intent"),
+        analysis.get("entities") or {},
+        rows,
+        knowledge_hits,
+        state,
+        page_config,
+    )
+    if not reply:
+        if analysis["intent"] == "NEGOTIATE_PRICE":
+            reply = build_negotiate_reply(
+                rows,
+                user_message_for_domain,
                 analysis,
                 knowledge_hits,
                 state=state,
-                last_results=(state or {}).get("last_results") or [],
                 data_fields_json=data_fields_json,
             )
-            analysis["reply_mode"] = "NO_DATA_REPLY"
-    else:
-        reply = build_knowledge_reply(analysis, state, persona_json, knowledge_hits)
-        if not reply:
-            reply = _deterministic_reply(
-            analysis["intent"], state, persona_json, knowledge_hits
-            )
-        if not reply:
-            if is_identity_or_pronoun_message(user_message):
-                reply = "cần tìm loại nào hoặc khu vực nào bên e check ạ"
-            else:
-                reply = generate_reply(
-                    expertise, persona_json, "", None, state, analysis, [], history,
-                    user_message, page_config=page_config, knowledge_hits=knowledge_hits,
+            analysis["reply_mode"] = "NEGOTIATE_REPLY"
+        elif len(set(analysis.get("intents") or [])) > 1 and not analysis["need_data"]:
+            reply = build_knowledge_reply(analysis, state, persona_json, knowledge_hits, expertise=expertise)
+            if not reply:
+                reply = _deterministic_reply(
+                    analysis["intent"], state, persona_json, knowledge_hits, expertise=expertise
                 )
+            analysis["reply_mode"] = "KNOWLEDGE_REPLY"
+        elif analysis["need_data"]:
+            if rows:
+                reply = build_data_reply(rows, analysis, data_fields_json)
+                analysis["reply_mode"] = "DATA_REPLY"
+            else:
+                reply = build_no_data_reply(
+                    user_message_for_domain,
+                    analysis,
+                    knowledge_hits,
+                    state=state,
+                    last_results=(state or {}).get("last_results") or [],
+                    data_fields_json=data_fields_json,
+                )
+                analysis["reply_mode"] = "NO_DATA_REPLY"
+        else:
+            if analysis["reply_mode"] == "GREETING_REPLY" or analysis["intent"] == "GREETING":
+                reply = build_greeting_reply(expertise, persona_json, knowledge_hits)
+            elif _is_domain_catalog_question(user_message_for_domain):
+                reply = get_skill_reply_template(analysis["intent"], expertise, persona_json, knowledge_hits) or _domain_intro_reply(domain_label)
+            else:
+                reply = build_knowledge_reply(analysis, state, persona_json, knowledge_hits, expertise=expertise)
+            if not reply:
+                reply = _deterministic_reply(
+                    analysis["intent"], state, persona_json, knowledge_hits, expertise=expertise
+                )
+            if not reply:
+                if is_identity_or_pronoun_message(user_message_for_domain):
+                    reply = _fallback_by_domain(domain_label)
+                else:
+                    reply = generate_reply(
+                        expertise, persona_json, "", None, state, analysis, [], history,
+                        user_message_for_domain, page_config=page_config, knowledge_hits=knowledge_hits,
+                    )
+    if not reply:
+        reply = handler.safe_fallback(analysis.get("intent"), analysis.get("entities") or {}, state, page_config)
     reply = _neutralize_reply(reply)
-    new_state = _clean_state(state, analysis, rows)
+    new_state = handler.update_state(state, analysis.get("intent"), analysis.get("entities") or {}, rows, reply, page_config)
+    if not isinstance(new_state, dict):
+        new_state = _clean_state(state, analysis, rows)
     upsert_conversation_state(page_id, sender_id, expertise_id, new_state)
     add_conversation(page_id, sender_id, expertise_id, "user", user_message)
     for part in split_reply(reply, persona_json):
@@ -1365,7 +1725,7 @@ def process_message(
         "[RUNTIME_AI] "
         f"page_id={page_id} sender={_mask_sender(sender_id)} "
         f"expertise_id={expertise_id} expertise_name={expertise.get('name') or ''} "
-        f"data_table={data_table} rag_intent={rag_route['intent_hint']} "
+        f"domain={domain} handler={handler.__class__.__name__} data_table={data_table} rag_intent={rag_route['intent_hint']} "
         f"rag_need_data={rag_route['need_data_hint']} "
         f"rag_confidence={rag_route['confidence']:.2f} "
         f"knowledge_ids={[hit.get('id') for hit in knowledge_hits]} "

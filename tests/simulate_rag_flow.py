@@ -5,12 +5,14 @@ from brain.knowledge_retriever import (
 )
 from brain.pipeline import (
     _build_data_query,
+    _fallback_by_domain,
     _deterministic_reply,
     build_data_reply,
     build_no_data_reply,
     filter_data_rows,
     normalize_intent,
     should_search_data,
+    get_skill_domain_label,
 )
 from database.dynamic_table_manager import search_dynamic_rows
 from database.expertise_manager import get_expertise
@@ -59,8 +61,8 @@ def simulate():
             )
         else:
             reply = _deterministic_reply(
-                analysis["intent"], state, expertise.get("persona_json"), hits
-            ) or "cần tìm loại nào hoặc khu vực nào bên e check ạ"
+                analysis["intent"], state, expertise.get("persona_json"), hits, expertise=expertise
+            ) or _fallback_by_domain(get_skill_domain_label(expertise, expertise.get("persona_json")))
         plate = analysis["entities"].get("plate")
         if plate:
             state["selected_plate"] = plate

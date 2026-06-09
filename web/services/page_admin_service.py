@@ -2,7 +2,7 @@ import sqlite3
 
 import requests
 
-from services.runtime_context import clear_inventory_context, clear_page_context
+from services.runtime_context import clear_page_context
 from utils.config_service import get_runtime_config
 from web.services.common_admin_service import (
     get_current_intent_model,
@@ -84,8 +84,6 @@ def update_page(page_id, data):
         success = db_update_page(page_id, **data)
         if success:
             clear_page_context(page_id)
-            if "ai_skill" in data:
-                clear_inventory_context()
             return {"success": True, "message": "Page updated successfully"}, 200
         return {"success": False, "error": "Page not found or no changes"}, 404
     except Exception as exc:

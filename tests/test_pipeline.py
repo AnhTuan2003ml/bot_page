@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from brain.knowledge_retriever import infer_intent_from_knowledge, parse_training_records
 from brain.pipeline import (
@@ -9,6 +9,7 @@ from brain.pipeline import (
     process_message,
     should_search_data,
 )
+from services.search_index import SearchIndex
 
 
 TRAINING = """
@@ -41,6 +42,10 @@ class PipelineTests(unittest.TestCase):
     def _run(self, message, state=None, rows=None):
         state = state or {}
         rows = rows or []
+        page_context = context()
+        index = SearchIndex(rows)
+        index.search = MagicMock(wraps=index.search)
+        page_context["search_index"] = index
         with (
             patch("brain.pipeline.get_conversation_state", return_value=state),
             patch("brain.pipeline.get_recent_conversations", return_value=[]),
@@ -50,8 +55,8 @@ class PipelineTests(unittest.TestCase):
             patch("brain.pipeline.call_intent_model", return_value='{"intent":"UNKNOWN"}'),
             patch("brain.pipeline.call_model", return_value="cần thêm tiêu chí để bên e check ạ"),
         ):
-            reply = process_message("test", message, page_config=context())
-        return reply, search
+            reply = process_message("test", message, page_config=page_context)
+        return reply, index.search
 
     def test_no_data_routes_never_search(self):
         for message in [

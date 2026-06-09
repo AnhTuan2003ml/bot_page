@@ -48,6 +48,13 @@ DEFAULT_CONFIGS = {
     "RAG_KB_MODE": {"value": "runtime", "type": "string", "secret": False},
     "RAG_TOP_K": {"value": "5", "type": "int", "secret": False},
     "RAG_MIN_SCORE": {"value": "0.05", "type": "float", "secret": False},
+    "ENABLE_FILE_CONVERSATION_LOG": {"value": "false", "type": "bool", "secret": False},
+    "ENABLE_RUNTIME_FILE_LOG": {"value": "false", "type": "bool", "secret": False},
+    "ENABLE_CONVERSATION_DB_LOG": {"value": "false", "type": "bool", "secret": False},
+    "DB_FLUSH_INTERVAL_SECONDS": {"value": "10", "type": "int", "secret": False},
+    "STATE_BUFFER_MAX_DIRTY": {"value": "30", "type": "int", "secret": False},
+    "CONVERSATION_LOG_BUFFER_SIZE": {"value": "50", "type": "int", "secret": False},
+    "MAX_PRELOAD_ROWS": {"value": "0", "type": "int", "secret": False},
     "AI_SKILL": {"value": "plate_sales", "type": "string", "secret": False},
     "DEFAULT_SKILL": {"value": "plate_sales", "type": "string", "secret": False},
 }
