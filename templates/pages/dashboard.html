@@ -46,6 +46,18 @@
                 </div>
                 <small>Nhập App ID, App Secret, User Token rồi nhấn "Lấy danh sách Page" để chọn Page muốn thêm.</small>
             </div>
+
+            <!-- Trạng thái + danh sách page nằm ngay dưới ô token -->
+            <div id="verify-status"></div>
+            <div id="page-selection-section-top" style="display:none;">
+                <h4>Chọn Page muốn thêm:</h4>
+                <div id="page-list-container"></div>
+                <div style="margin-top:12px;">
+                    <button class="btn btn-success" onclick="addSelectedPage()" id="add-selected-btn" disabled>
+                        ➕ Thêm Page đã chọn
+                    </button>
+                </div>
+            </div>
             
             <!-- AI Config -->
             <div class="grid-2">
