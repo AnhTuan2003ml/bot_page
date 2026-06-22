@@ -753,7 +753,8 @@ function deletePage(pageId, pageName) {
 let selectedPageForAdd = null;
 let verifiedPagesList = [];
 
-async function verifyPageToken() {
+// Bước 1: Lấy danh sách Page từ Facebook
+async function fetchPageList() {
     const appId = document.getElementById('new-app-id').value.trim();
     const appSecret = document.getElementById('new-app-secret').value.trim();
     const token = document.getElementById('new-page-token').value.trim();
@@ -761,13 +762,16 @@ async function verifyPageToken() {
     const pageSection = document.getElementById('page-selection-section');
     const container = document.getElementById('page-list-container');
     const addBtn = document.getElementById('add-selected-btn');
+    const fetchBtn = document.getElementById('fetch-pages-btn');
 
     if (!appId || !appSecret || !token) {
-        statusDiv.innerHTML = '<span style="color:#ef4444">Vui lòng nhập đầy đủ App ID, App Secret và User Token</span>';
+        statusDiv.innerHTML = '<span style="color:#ef4444">⚠️ Vui lòng nhập đầy đủ App ID, App Secret và User Token</span>';
         return;
     }
 
-    statusDiv.innerHTML = '<span style="color:#3b82f6">Đang verify và lấy danh sách Page...</span>';
+    fetchBtn.disabled = true;
+    fetchBtn.textContent = '⏳ Đang lấy...';
+    statusDiv.innerHTML = '<span style="color:#3b82f6">🔄 Đang exchange token và lấy danh sách Page...</span>';
     pageSection.style.display = 'none';
     container.innerHTML = '';
     addBtn.disabled = true;
@@ -787,17 +791,17 @@ async function verifyPageToken() {
 
         if (data.success && data.pages && data.pages.length > 0) {
             verifiedPagesList = data.pages;
-            statusDiv.innerHTML = `<span style="color:#22c55e">✅ Tìm thấy ${data.pages.length} Page. Vui lòng chọn Page bên dưới.</span>`;
+            statusDiv.innerHTML = `<span style="color:#22c55e">✅ Tìm thấy ${data.pages.length} Page. Chọn Page bên dưới rồi nhấn "Thêm Page đã chọn".</span>`;
             pageSection.style.display = 'block';
 
             container.innerHTML = data.pages.map((page, index) => `
-                <div onclick="selectPage(${index}, this)" 
-                     style="padding: 12px; margin-bottom: 8px; border: 2px solid #4b5563; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 12px; transition: all 0.2s;"
+                <div onclick="selectPage(${index}, this)"
+                     style="padding:12px;margin-bottom:8px;border:2px solid #4b5563;border-radius:8px;cursor:pointer;display:flex;gap:12px;align-items:center;transition:all 0.15s;"
                      class="page-item">
-                    <input type="radio" name="selected_page" style="margin-right: 8px; transform: scale(1.2);">
-                    <div style="flex: 1;">
-                        <strong style="font-size: 15px;">${page.name}</strong><br>
-                        <small style="color:#9ca3af;">ID: ${page.id}</small>
+                    <input type="radio" name="selected_page" style="margin-right:4px;transform:scale(1.2);pointer-events:none;">
+                    <div style="flex:1;">
+                        <strong style="font-size:15px;">${page.name}</strong><br>
+                        <small style="color:#9ca3af;">ID: ${page.id}${page.category ? ' \u2022 ' + page.category : ''}</small>
                     </div>
                 </div>
             `).join('');
@@ -806,21 +810,30 @@ async function verifyPageToken() {
         }
     } catch (e) {
         statusDiv.innerHTML = `<span style="color:#ef4444">❌ Lỗi kết nối: ${e.message}</span>`;
+    } finally {
+        fetchBtn.disabled = false;
+        fetchBtn.textContent = '📋 Lấy danh sách Page';
     }
 }
 
+// Bước 2: Chọn page từ danh sách
 function selectPage(index, element) {
     document.querySelectorAll('.page-item').forEach(el => {
         el.style.border = '2px solid #4b5563';
         el.style.background = 'transparent';
+        const radio = el.querySelector('input[type=radio]');
+        if (radio) radio.checked = false;
     });
     element.style.border = '2px solid #22c55e';
     element.style.background = 'rgba(34, 197, 94, 0.1)';
-    
+    const radio = element.querySelector('input[type=radio]');
+    if (radio) radio.checked = true;
+
     selectedPageForAdd = verifiedPagesList[index];
     document.getElementById('add-selected-btn').disabled = false;
 }
 
+// Bước 3: Subscribe webhook + lưu DB cho page được chọn
 async function addSelectedPage() {
     if (!selectedPageForAdd) {
         alert('Vui lòng chọn một Page!');
@@ -829,7 +842,7 @@ async function addSelectedPage() {
 
     const addBtn = document.getElementById('add-selected-btn');
     addBtn.disabled = true;
-    addBtn.textContent = 'Đang thêm Page...';
+    addBtn.textContent = '⏳ Đang subscribe & lưu Page...';
 
     const payload = {
         page_id: selectedPageForAdd.id,
@@ -847,7 +860,7 @@ async function addSelectedPage() {
     };
 
     try {
-        const res = await fetch('/api/pages', {
+        const res = await fetch('/api/pages/subscribe-page', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -855,13 +868,10 @@ async function addSelectedPage() {
         const data = await res.json();
 
         if (data.success) {
-            if (typeof showAlert === 'function') {
-                showAlert('✅ Đã thêm Page thành công!');
-            } else {
-                alert('✅ Đã thêm Page thành công!');
-            }
+            const subMsg = data.subscribed ? ' và đã subscribe webhook' : ' (subscribe webhook thất bại, có thể cần thử lại)';
+            showAlert(`✅ Đã thêm Page "${selectedPageForAdd.name}" thành công${subMsg}!`);
             closeAddPageModal();
-            if (typeof loadPages === 'function') loadPages();
+            loadPages();
         } else {
             alert('Lỗi: ' + (data.error || 'Không thể thêm Page'));
             addBtn.disabled = false;
@@ -877,20 +887,26 @@ async function addSelectedPage() {
 function closeAddPageModal() {
     const modal = document.getElementById('add-page-modal');
     if (modal) modal.classList.add('hidden');
-    
+
     const pageSection = document.getElementById('page-selection-section');
     if (pageSection) pageSection.style.display = 'none';
-    
+
     const statusDiv = document.getElementById('verify-status');
     if (statusDiv) statusDiv.innerHTML = '';
-    
+
     selectedPageForAdd = null;
     verifiedPagesList = [];
-    
+
     const addBtn = document.getElementById('add-selected-btn');
     if (addBtn) {
         addBtn.disabled = true;
         addBtn.textContent = '➕ Thêm Page đã chọn';
+    }
+
+    const fetchBtn = document.getElementById('fetch-pages-btn');
+    if (fetchBtn) {
+        fetchBtn.disabled = false;
+        fetchBtn.textContent = '📋 Lấy danh sách Page';
     }
 }
 
