@@ -78,3 +78,9 @@ def api_get_ai_config():
 def api_verify_and_list_pages():
     result, status = page_admin_service.verify_and_list_pages(request.get_json(silent=True) or {})
     return jsonify(result), status
+
+
+@admin_bp.route("/api/pages/subscribe-page", methods=["POST"])
+def api_subscribe_page():
+    result, status = page_admin_service.subscribe_and_save_page(request.get_json(silent=True) or {})
+    return jsonify(result), status

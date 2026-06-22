@@ -335,6 +335,102 @@ def verify_page_token(data):
     except Exception as exc:
         return {"success": False, "error": str(exc)}, 500
 
+def subscribe_and_save_page(data):
+    """
+    Subscribe webhook + lưu DB cho 1 page cụ thể đã được chọn từ danh sách.
+    Nhận page_id, page_name, page_access_token, app_id, app_secret, ai_skill, ...
+    """
+    data = data or {}
+    page_id = str(data.get("page_id", "")).strip()
+    page_name = data.get("page_name", "Unknown")
+    page_access_token = data.get("page_access_token", "").strip()
+    app_id = data.get("app_id", "").strip()
+    app_secret = data.get("app_secret", "").strip()
+
+    if not page_id or not page_access_token:
+        return {"success": False, "error": "page_id và page_access_token bắt buộc"}, 400
+
+    try:
+        # Subscribe webhook cho page này
+        subscribed = False
+        try:
+            subscribe_resp = requests.post(
+                f"https://graph.facebook.com/v25.0/{page_id}/subscribed_apps",
+                params={"access_token": page_access_token},
+                data={
+                    "subscribed_fields": "messages,messaging_postbacks,messaging_optins,"
+                    "message_deliveries,message_reads,message_echoes,message_reactions,message_edits"
+                },
+                timeout=10,
+            )
+            subscribed = subscribe_resp.json().get("success", False)
+        except Exception as sub_err:
+            print(f"[SUBSCRIBE] Warning: subscribe failed for {page_id}: {sub_err}")
+
+        # Lưu hoặc cập nhật page trong DB
+        from database.page_manager import add_page as db_add_page, get_page as db_get_page, update_page as db_update_page
+        from database.skill_manager import get_all_skills
+
+        ai_skill = normalize_ai_skill(data.get("ai_skill", ""))
+        ai_provider = normalize_ai_provider(data.get("ai_provider", get_current_provider()))
+        intent_parser_provider = normalize_ai_provider(data.get("intent_parser_provider") or get_current_intent_provider())
+        intent_parser_model = str(data.get("intent_parser_model", "") or "").strip()
+        ai_model = str(data.get("ai_model", "") or "").strip()
+        ai_provider_token = str(data.get("ai_provider_token", "") or "").strip()
+        intent_parser_token = str(data.get("intent_parser_token", "") or "").strip()
+
+        if not ai_skill:
+            skills = get_all_skills()
+            ai_skill = normalize_ai_skill(skills[0].get("skill_id") or skills[0]["name"]) if skills else "plate_sales"
+
+        if db_get_page(page_id):
+            db_update_page(
+                page_id,
+                page_name=page_name,
+                page_access_token=page_access_token,
+                app_id=app_id,
+                app_secret=app_secret,
+                ai_skill=ai_skill,
+                ai_provider=ai_provider,
+                intent_parser_provider=intent_parser_provider,
+                intent_parser_model=intent_parser_model,
+                ai_model=ai_model,
+                ai_provider_token=ai_provider_token,
+                intent_parser_token=intent_parser_token,
+            )
+        else:
+            db_add_page(
+                page_id=page_id,
+                page_name=page_name,
+                page_access_token=page_access_token,
+                ai_skill=ai_skill,
+                ai_provider=ai_provider,
+                intent_parser_provider=intent_parser_provider,
+                intent_parser_model=intent_parser_model,
+                ai_model=ai_model,
+                ai_provider_token=ai_provider_token,
+                intent_parser_token=intent_parser_token,
+                app_id=app_id,
+                app_secret=app_secret,
+                is_active=True,
+            )
+
+        clear_page_context(page_id)
+
+        return {
+            "success": True,
+            "subscribed": subscribed,
+            "message": f"Page {page_name} đã được thêm thành công",
+            "page": {
+                "id": page_id,
+                "name": page_name,
+            },
+        }, 200
+
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}, 500
+
+
 def verify_and_list_pages(data):
     """
     Lấy HẾT tất cả Page Facebook (tự động phân trang) - Phiên bản hoàn chỉnh
