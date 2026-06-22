@@ -49,14 +49,10 @@
 
             <!-- Trạng thái + danh sách page nằm ngay dưới ô token -->
             <div id="verify-status"></div>
-            <div id="page-selection-section-top" style="display:none;">
+            <div id="page-selection-section" style="display:none;">
                 <h4>Chọn Page muốn thêm:</h4>
                 <div id="page-list-container"></div>
-                <div style="margin-top:12px;">
-                    <button class="btn btn-success" onclick="addSelectedPage()" id="add-selected-btn" disabled>
-                        ➕ Thêm Page đã chọn
-                    </button>
-                </div>
+                
             </div>
             
             <!-- AI Config -->
@@ -97,27 +93,13 @@
                     <input type="text" id="new-intent-token" placeholder="Dán API key riêng cho intent parser" autocomplete="off">
                 </div>
             </div>
-            
-            <!-- Status -->
-            <div id="verify-status" style="margin-top: 10px; font-size: 13px;"></div>
-
-            <!-- DANH SÁCH PAGE - HIỂN THỊ SAU KHI VERIFY -->
-            <div id="page-selection-section" style="display: none; margin-top: 20px; border-top: 1px solid #374151; padding-top: 16px;">
-                <h4 style="margin-bottom: 12px; color: #e5e7eb;">Chọn Page muốn thêm:</h4>
-                <div id="page-list-container" style="max-height: 280px; overflow-y: auto; border: 1px solid #4b5563; border-radius: 8px; padding: 8px;">
-                    <!-- Danh sách Page sẽ được JS render vào đây -->
-                </div>
-                <div style="margin-top: 12px; text-align: right;">
-                    <button class="btn btn-success" onclick="addSelectedPage()" id="add-selected-btn" disabled>
-                        ➕ Thêm Page đã chọn
-                    </button>
-                </div>
-            </div>
         </div>
         <div class="modal-footer">
             <button class="btn btn-secondary" onclick="closeAddPageModal()">Hủy</button>
-            <!-- Nút "Lấy danh sách Page" đã được chuyển lên cạnh ô User Token -->
+            <button class="btn btn-success" onclick="addSelectedPage()" id="add-selected-btn" disabled>
+                ➕ Thêm Page đã chọn
             </button>
+            <!-- Nút "Lấy danh sách Page" đã được chuyển lên cạnh ô User Token -->
         </div>
     </div>
 </div>
