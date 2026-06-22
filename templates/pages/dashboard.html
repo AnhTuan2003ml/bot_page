@@ -38,8 +38,13 @@
             <!-- User Token -->
             <div class="form-group">
                 <label>User Access Token ngắn hạn <span style="color: red">*</span></label>
-                <input type="text" id="new-page-token" placeholder="Dán User Access Token để exchange" autocomplete="off">
-                <small>Nhập User Access Token -> tự động exchange sang Token truy cập Page</small>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="text" id="new-page-token" placeholder="Dán User Access Token" style="flex:1;" autocomplete="off">
+                    <button type="button" class="btn btn-primary" onclick="fetchPageList()" id="fetch-pages-btn" style="white-space:nowrap;min-width:180px;">
+                        📋 Lấy danh sách Page
+                    </button>
+                </div>
+                <small>Nhập App ID, App Secret, User Token rồi nhấn "Lấy danh sách Page" để chọn Page muốn thêm.</small>
             </div>
             
             <!-- AI Config -->
