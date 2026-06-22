@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block title %}Quản lý Sản phẩm - Bot Admin{% endblock %}
+
+{% block content %}
+<h1 class="page-title">📦 Quản lý Sản phẩm</h1>
+
+<!-- Quick Stats -->
+<div class="stats" style="margin-bottom: 20px;">
+    <div class="stat-box">
+        <div class="stat-number" id="stat-total">0</div>
+        <div class="stat-label">Tổng</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-number" id="stat-available">0</div>
+        <div class="stat-label">Hoạt động</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-number" id="stat-sold">0</div>
+        <div class="stat-label">Đã xử lý</div>
+    </div>
+</div>
+
+<!-- Records Table -->
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>📋 Danh sách tất cả bản ghi</h2>
+        <button class="btn btn-success" onclick="openAddModal()">➕ Thêm bản ghi</button>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Mã/Tên</th>
+                    <th>Giá trị/Giá</th>
+                    <th>Loại xe</th>
+                    <th>Trạng thái</th>
+                    <th>Cập nhật</th>
+                    <th>Thao tác</th>
+                </tr>
+            </thead>
+            <tbody id="plates-table">
+                <tr><td colspan="8" class="empty-state">Đang tải...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Add Modal -->
+<div id="add-modal" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px; width: 90%;">
+        <div class="modal-header">
+            <h3>➕ Thêm bản ghi mới</h3>
+            <button class="btn btn-secondary" onclick="closeAddModal()" style="padding: 5px 10px;">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Mã/Tên:</label>
+                <input type="text" id="new-plate-number" placeholder="VD: 29A-12345 hoặc tên sản phẩm">
+            </div>
+            <div class="form-group">
+                <label>Giá trị/Giá (VNĐ):</label>
+                <input type="text" id="new-plate-price" placeholder="5.000.000" oninput="formatPriceInput(this)">
+            </div>
+            <div class="form-group">
+                <label>Loại xe:</label>
+                <select id="new-vehicle-type">
+                    <option value="">Tự nhận diện / chưa gán</option>
+                    <option value="xe máy">Xe máy</option>
+                    <option value="ô tô">Ô tô</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Trạng thái:</label>
+                <select id="new-plate-status">
+                    <option value="available">Hoạt động</option>
+                    <option value="sold">Đã xử lý</option>
+                    <option value="reserved">Chờ xử lý</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeAddModal()">Hủy</button>
+            <button class="btn btn-success" onclick="addPlate()">➕ Thêm bản ghi</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="edit-modal" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px; width: 90%;">
+        <div class="modal-header">
+            <h3>✏️ Chỉnh sửa bản ghi</h3>
+            <button class="btn btn-secondary" onclick="closeEditModal()" style="padding: 5px 10px;">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Mã/Tên:</label>
+                <input type="text" id="edit-plate-number" readonly style="background: var(--gray-200); color: var(--gray-500);">
+            </div>
+            <div class="form-group">
+                <label>Giá trị/Giá (VNĐ):</label>
+                <input type="number" id="edit-price" placeholder="0">
+            </div>
+            <div class="form-group">
+                <label>Loại xe:</label>
+                <select id="edit-vehicle-type">
+                    <option value="">Chưa gán</option>
+                    <option value="xe máy">Xe máy</option>
+                    <option value="ô tô">Ô tô</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Trạng thái:</label>
+                <select id="edit-status">
+                    <option value="available">Hoạt động</option>
+                    <option value="sold">Đã xử lý</option>
+                    <option value="reserved">Chờ xử lý</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeEditModal()">Hủy</button>
+            <button class="btn btn-primary" onclick="savePlateEdit()">💾 Lưu thay đổi</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Plates page specific functions - uses currentEditPlate from main.js
+
+function openAddModal() {
+    document.getElementById('add-modal').classList.remove('hidden');
+}
+
+function closeAddModal() {
+    document.getElementById('add-modal').classList.add('hidden');
+    document.getElementById('new-plate-number').value = '';
+    document.getElementById('new-plate-price').value = '';
+    document.getElementById('new-vehicle-type').value = '';
+}
+
+function openEditModal(plateNumber, currentPrice, currentStatus, vehicleType = "") {
+    currentEditPlate = plateNumber;
+    document.getElementById('edit-plate-number').value = plateNumber;
+    document.getElementById('edit-price').value = currentPrice || 0;
+    document.getElementById('edit-status').value = currentStatus;
+    document.getElementById('edit-vehicle-type').value = vehicleType || '';
+    document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+    document.getElementById('edit-modal').classList.add('hidden');
+    currentEditPlate = null;
+}
+
+// Format price input with thousand separators
+function formatPriceInput(input) {
+    // Remove non-digit characters
+    let value = input.value.replace(/\D/g, '');
+    // Format with dots
+    if (value) {
+        input.value = parseInt(value).toLocaleString('vi-VN');
+    }
+}
+
+// Get numeric value from formatted price
+function getNumericPrice(inputId) {
+    const value = document.getElementById(inputId)?.value || '0';
+    return parseInt(value.replace(/\./g, '')) || 0;
+}
+
+async function addPlate() {
+    const number = document.getElementById('new-plate-number')?.value?.trim();
+    const price = getNumericPrice('new-plate-price');
+    const status = document.getElementById('new-plate-status')?.value;
+    const vehicle_type = document.getElementById('new-vehicle-type')?.value || '';
+
+    if (!number) {
+        showAlert('Vui lòng nhập Mã/Tên!', 'error');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/plates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plate_number: number, price: price, status, vehicle_type })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            showAlert('✅ Đã thêm bản ghi!');
+            closeAddModal();
+            loadPlates();
+            loadStats();
+        } else {
+            showAlert(data.error || 'Lỗi!', 'error');
+        }
+    } catch (e) {
+        showAlert('Lỗi kết nối!', 'error');
+    }
+}
+
+async function deletePlate(plateNumber) {
+    if (!confirm(`Xóa bản ghi "${plateNumber}"?`)) return;
+
+    try {
+        const res = await fetch(`/api/plates/${plateNumber}`, { method: 'DELETE' });
+        const data = await res.json();
+
+        if (data.success) {
+            showAlert('✅ Đã xóa!');
+            loadPlates();
+            loadStats();
+        } else {
+            showAlert(data.error || 'Lỗi!', 'error');
+        }
+    } catch (e) {
+        showAlert('Lỗi kết nối!', 'error');
+    }
+}
+
+async function savePlateEdit() {
+    if (!currentEditPlate) return;
+
+    const price = document.getElementById('edit-price').value;
+    const status = document.getElementById('edit-status').value;
+    const vehicle_type = document.getElementById('edit-vehicle-type').value || '';
+
+    try {
+        const res = await fetch(`/api/plates/${currentEditPlate}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ price: parseInt(price) || 0, status, vehicle_type })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            showAlert('✅ Đã cập nhật!');
+            closeEditModal();
+            loadPlates();
+            loadStats();
+        } else {
+            showAlert(data.error || 'Lỗi!', 'error');
+        }
+    } catch (e) {
+        showAlert('Lỗi kết nối!', 'error');
+    }
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const addModal = document.getElementById('add-modal');
+    const editModal = document.getElementById('edit-modal');
+    if (event.target === addModal) closeAddModal();
+    if (event.target === editModal) closeEditModal();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadStats();
+    loadPlates();
+});
+</script>
+{% endblock %}

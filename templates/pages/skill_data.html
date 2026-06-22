@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block title %}Dữ liệu chuyên môn - Bot Admin{% endblock %}
+{% block active_page %}skill_data{% endblock %}
+
+{% block content %}
+<style>
+.data-toolbar { display:flex; gap:12px; align-items:end; justify-content:space-between; flex-wrap:wrap; }
+.data-toolbar-left { display:flex; gap:12px; align-items:end; flex-wrap:wrap; }
+.data-toolbar select { min-width: 260px; background:#111827 !important; color:#e5e7eb !important; border:1px solid #334155 !important; }
+.data-toolbar select option { background:#111827; color:#e5e7eb; }
+.data-modal { max-width: 980px; width: 92vw; }
+#item-form { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:14px; }
+#item-form input, #item-form select, #item-form textarea { width:100%; background:#111827 !important; color:#e5e7eb !important; border:1px solid #334155 !important; }
+#item-form input::placeholder { color:#64748b; }
+.data-help { color: var(--gray-500); font-size: 12px; margin-top: 6px; }
+@media (max-width: 800px) { #item-form { grid-template-columns: 1fr; } }
+</style>
+
+<div class="page-header">
+    <h2>📦 Kho dữ liệu</h2>
+    <p>Chọn chuyên môn để thêm, sửa và xóa dữ liệu tương ứng.</p>
+</div>
+
+<div class="table-wrapper">
+    <div class="table-header data-toolbar">
+        <div class="data-toolbar-left">
+            <div>
+                <label>Chuyên môn</label>
+                <select id="data-skill" class="form-control"></select>
+            </div>
+        </div>
+        <button class="btn btn-success" onclick="openItemModal()">＋ Thêm dữ liệu</button>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead id="data-table-head"></thead>
+            <tbody id="data-table-body"><tr><td class="empty-state">Đang tải...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<div id="item-modal" class="modal hidden">
+    <div class="modal-content data-modal">
+        <div class="modal-header">
+            <h3 id="item-modal-title">Thêm dữ liệu</h3>
+            <button class="btn btn-secondary" onclick="closeItemModal()">✕</button>
+        </div>
+        <div class="modal-body"><div id="item-form"></div></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeItemModal()">Hủy</button>
+            <button class="btn btn-success" onclick="saveItem()">💾 Lưu</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let skills = [];
+let currentFields = [];
+let currentItems = [];
+let editingItemId = null;
+
+function esc(value) { return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function fieldKey(field) { return field.field_key || field.key || field.name || field.label || ''; }
+function fieldLabel(field) { return field.field_label || field.label || fieldKey(field); }
+function fieldType(field) { return field.field_type || field.type || 'text'; }
+function isRequired(field) { return Number(field.is_required || field.required || 0) === 1 || field.required === true; }
+function selectedSkill() { return document.getElementById('data-skill').value; }
+function isMoneyField(field) { const key=String(fieldKey(field)||'').toLowerCase(); const type=String(fieldType(field)||'').toLowerCase(); return type==='money' || key==='price' || key==='gia' || key.includes('price') || key.includes('gia'); }
+function parseVietnameseMoney(input) {
+    if (input === null || input === undefined) return null;
+    let text = String(input).trim().toLowerCase(); if (!text) return null;
+    text = text.replace(/vnđ|vnd|đ/g, '').replace(/\s+/g, '').replace(',', '.');
+    let multiplier = 1;
+    if (text.includes('triệu') || text.includes('trieu') || text.endsWith('tr')) { multiplier = 1000000; text = text.replace('triệu','').replace('trieu','').replace(/tr$/,''); }
+    else if (text.endsWith('m')) { multiplier = 1000000; text = text.replace(/m$/,''); }
+    else if (text.endsWith('k') || text.includes('nghìn') || text.includes('nghin')) { multiplier = 1000; text = text.replace(/k$/,'').replace('nghìn','').replace('nghin',''); }
+    if ((text.match(/\./g)||[]).length >= 2) text = text.replace(/\./g, '');
+    const value = Number(text); return Number.isNaN(value) ? null : Math.round(value * multiplier);
+}
+function formatVietnameseMoney(value) { const n = Number(value); return Number.isNaN(n) ? '' : n.toLocaleString('vi-VN'); }
+function liveFormatMoneyInput(input) {
+    const rawDigits = String(input.value || '').replace(/\D/g, '');
+    if (!rawDigits) { input.dataset.rawValue = ''; input.value = ''; return; }
+    const number = Number(rawDigits); input.dataset.rawValue = String(number); input.value = formatVietnameseMoney(number);
+}
+
+async function initSkillSelect() {
+    const res = await fetch('/api/skills');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Không tải được skill');
+    skills = data.skills || [];
+    const select = document.getElementById('data-skill');
+    const params = new URLSearchParams(location.search);
+    const wanted = params.get('skill');
+    select.innerHTML = skills.map(s => {
+        const key = s.id || s.skill_id || s.name;
+        return `<option value="${esc(key)}">${esc(s.name || key)}</option>`;
+    }).join('');
+    if (wanted && [...select.options].some(o => o.value === wanted)) select.value = wanted;
+    select.addEventListener('change', () => {
+        const url = new URL(location.href); url.searchParams.set('skill', selectedSkill()); history.replaceState(null, '', url.toString()); loadAll();
+    });
+}
+async function loadAll() { await loadFields(); await loadItems(); }
+async function loadFields() {
+    const skill = selectedSkill();
+    if (!skill) { currentFields = []; renderTable(); return; }
+    const res = await fetch(`/api/skills/${encodeURIComponent(skill)}/fields`);
+    const data = await res.json();
+    currentFields = data.fields || [];
+}
+async function loadItems() {
+    const skill = selectedSkill();
+    if (!skill) return renderTable();
+    const res = await fetch(`/api/skills/${encodeURIComponent(skill)}/items?page=1&page_size=500`);
+    const data = await res.json();
+    if (!data.success) return showAlert(data.error || 'Không tải được dữ liệu', 'error');
+    currentItems = data.items || [];
+    renderTable();
+}
+function displayedFields() { return currentFields.filter(f => Number(f.is_displayed ?? 1) !== 0); }
+function valueForDisplay(item, field) { const value = item.data?.[fieldKey(field)] ?? (fieldKey(field) === 'id' ? item.id : undefined); if (value === undefined || value === null || value === '') return '-'; return isMoneyField(field) ? formatVietnameseMoney(value) : esc(value); }
+function renderTable() {
+    const head = document.getElementById('data-table-head'); const body = document.getElementById('data-table-body'); const fields = displayedFields();
+    if (!selectedSkill()) { head.innerHTML = ''; body.innerHTML = '<tr><td class="empty-state">Hãy chọn chuyên môn.</td></tr>'; return; }
+    if (!currentFields.length) { head.innerHTML = '<tr><th>Thông báo</th></tr>'; body.innerHTML = '<tr><td class="empty-state">Chuyên môn này chưa có field. Vào Quản lý Chuyên môn → Sửa để nhập field trước.</td></tr>'; return; }
+    head.innerHTML = `<tr>${fields.map(f => `<th>${esc(fieldLabel(f))}</th>`).join('')}<th>Thao tác</th></tr>`;
+    if (!currentItems.length) { body.innerHTML = `<tr><td colspan="${fields.length + 1}" class="empty-state">Chưa có dữ liệu. Bấm “Thêm dữ liệu” để tạo bản ghi đầu tiên.</td></tr>`; return; }
+    body.innerHTML = currentItems.map(item => `<tr>
+        ${fields.map(f => `<td>${valueForDisplay(item, f)}</td>`).join('')}
+        <td><button class="btn btn-sm btn-primary" onclick="openItemModal(${JSON.stringify(String(item.id))})">Sửa</button> <button class="btn btn-sm btn-danger" onclick="deleteItem(${JSON.stringify(String(item.id))})">Xóa</button></td>
+    </tr>`).join('');
+}
+function fieldInput(field, value) {
+    const key = fieldKey(field); const id = `item-field-${key}`;
+    if (fieldType(field) === 'select') {
+        const opts = String(field.options || '').split(',').map(v => v.trim()).filter(Boolean);
+        return `<select id="${id}" class="form-control">${['', ...opts].map(o => `<option value="${esc(o)}" ${String(value ?? '')===o?'selected':''}>${o ? esc(o) : '-- chọn --'}</option>`).join('')}</select>`;
+    }
+    if (fieldType(field) === 'boolean') return `<input id="${id}" type="checkbox" ${value ? 'checked' : ''}>`;
+    if (isMoneyField(field)) return `<input id="${id}" type="text" class="form-control money-input" inputmode="numeric" value="${esc(value ? formatVietnameseMoney(value) : '')}" placeholder="VD: 3000000 hoặc 3tr">`;
+    const ft = fieldType(field); const type = ft === 'date' ? 'date' : ft === 'url' ? 'url' : ft === 'number' ? 'number' : 'text';
+    return `<input id="${id}" type="${type}" class="form-control" value="${esc(value ?? '')}">`;
+}
+function openItemModal(itemId = null) {
+    if (!selectedSkill()) return showAlert('Hãy chọn chuyên môn trước.', 'error');
+    if (!currentFields.length) return showAlert('Chuyên môn này chưa có field. Vào Quản lý Chuyên môn để nhập field.', 'error');
+    editingItemId = itemId;
+    const item = currentItems.find(x => String(x.id) === String(itemId));
+    document.getElementById('item-modal-title').textContent = item ? 'Sửa dữ liệu' : 'Thêm dữ liệu';
+    document.getElementById('item-form').innerHTML = currentFields.map(field => `<div class="form-group">
+        <label>${esc(fieldLabel(field))}${isRequired(field) ? ' *' : ''}</label>
+        ${fieldInput(field, item?.data?.[fieldKey(field)])}
+        ${field.description ? `<div class="data-help">${esc(field.description)}</div>` : ''}
+    </div>`).join('');
+    document.querySelectorAll('#item-form .money-input').forEach(input => input.addEventListener('input', () => liveFormatMoneyInput(input)));
+    document.getElementById('item-modal').classList.remove('hidden');
+}
+function closeItemModal() { document.getElementById('item-modal').classList.add('hidden'); editingItemId = null; }
+function collectItemData() {
+    const data = {};
+    currentFields.forEach(field => {
+        const input = document.getElementById(`item-field-${fieldKey(field)}`); if (!input) return;
+        if (fieldType(field) === 'boolean') data[fieldKey(field)] = input.checked;
+        else if (isMoneyField(field)) data[fieldKey(field)] = parseVietnameseMoney(input.value) || 0;
+        else data[fieldKey(field)] = input.value;
+    });
+    const idField = currentFields.find(f => isRequired(f)) || currentFields[0];
+    const rowId = idField ? String(data[fieldKey(idField)] ?? '').trim() : '';
+    return {id: rowId, data};
+}
+async function saveItem() {
+    const skill = selectedSkill();
+    const payload = collectItemData();
+    if (!editingItemId && !payload.id) return showAlert('Thiếu ID dữ liệu. Hãy nhập ô đầu tiên trong form, ví dụ Mã biển/Mã sản phẩm.', 'error');
+    const url = editingItemId ? `/api/skills/${encodeURIComponent(skill)}/items/${editingItemId}` : `/api/skills/${encodeURIComponent(skill)}/items`;
+    const res = await fetch(url, {method: editingItemId ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const data = await res.json();
+    if (!data.success) return showAlert((data.errors || [data.error || 'Dữ liệu không hợp lệ']).join('\n'), 'error');
+    closeItemModal(); await loadItems();
+}
+async function deleteItem(id) {
+    if (!confirm('Xóa dữ liệu này?')) return;
+    const res = await fetch(`/api/skills/${encodeURIComponent(selectedSkill())}/items/${id}`, {method:'DELETE'});
+    const data = await res.json();
+    if (data.success) loadItems(); else showAlert(data.error || 'Xóa thất bại', 'error');
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    try { await initSkillSelect(); await loadAll(); } catch (err) { showAlert(err.message, 'error'); }
+});
+</script>
+{% endblock %}

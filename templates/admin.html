@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Admin Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+        .header {
+            background: #1877f2;
+            color: white;
+            padding: 15px 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header h1 { font-size: 24px; }
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .card h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #1877f2;
+            border-bottom: 2px solid #e4e6eb;
+            padding-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #1877f2;
+            color: white;
+        }
+        .btn-primary:hover { background: #166fe5; }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover { background: #c82333; }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-success:hover { background: #218838; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            text-align: center;
+        }
+        .stat-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        .stat-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #1877f2;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .table-container {
+            overflow-x: auto;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #e4e6eb;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-available { background: #d4edda; color: #155724; }
+        .badge-sold { background: #f8d7da; color: #721c24; }
+        .badge-reserved { background: #fff3cd; color: #856404; }
+        .alert {
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        .alert-success { background: #d4edda; color: #155724; }
+        .alert-error { background: #f8d7da; color: #721c24; }
+        .hidden { display: none; }
+        .current-value {
+            background: #e7f3ff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+        .action-btns {
+            display: flex;
+            gap: 5px;
+        }
+        .action-btns .btn {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        .test-response {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 10px;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 Bot Admin Panel</h1>
+    </div>
+
+    <div class="container">
+        <div id="alert-container"></div>
+
+        <div class="grid">
+            <!-- Stats Card -->
+            <div class="card">
+                <h2>📊 Thống kê</h2>
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-number" id="stat-total">0</div>
+                        <div class="stat-label">Tổng biển số</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="stat-available">0</div>
+                        <div class="stat-label">Còn hàng</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="stat-sold">0</div>
+                        <div class="stat-label">Đã bán</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Skill Card -->
+            <div class="card">
+                <h2>🎭 AI Skill (Tính cách)</h2>
+                <div class="current-value">
+                    Hiện tại: <strong id="current-skill">{{ current_skill }}</strong>
+                </div>
+                <div class="form-group">
+                    <label>Chọn skill:</label>
+                    <select id="ai-skill">
+                        <option value="plate_sales">Plate Sales (Tư vấn biển số)</option>
+                        <option value="friendly">Friendly (Thân thiện)</option>
+                        <option value="professional">Professional (Chuyên nghiệp)</option>
+                        <option value="sales">Sales (Bán hàng)</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="setSkill()">💾 Lưu Skill</button>
+            </div>
+
+            <!-- AI Provider Card -->
+            <div class="card">
+                <h2>🤖 AI Provider</h2>
+                <div class="current-value">
+                    Hiện tại: <strong id="current-provider">{{ current_provider }}</strong>
+                </div>
+                <div class="form-group">
+                    <label>Chọn provider:</label>
+                    <select id="ai-provider">
+                        <option value="groq">Groq (Cloud - llama-3.3-70b)</option>
+                        <option value="ollama">Ollama Local (qwen3:4b-instruct)</option>
+                        <option value="openai">OpenAI</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="setProvider()">💾 Lưu Provider</button>
+            </div>
+
+            <!-- Facebook App Credentials Card -->
+            <div class="card">
+                <h2>📘 Facebook App Credentials</h2>
+                <div class="current-value">
+                    <div>App ID: <strong>{{ app_id }}</strong></div>
+                    <div>App Secret: <strong>{{ app_secret }}</strong></div>
+                    <div>Page Token: <strong>{{ page_token }}</strong></div>
+                </div>
+                <div class="form-group">
+                    <label>APP_ID:</label>
+                    <input type="text" id="fb-app-id" placeholder="Nhập App ID...">
+                </div>
+                <div class="form-group">
+                    <label>APP_SECRET:</label>
+                    <input type="text" id="fb-app-secret" placeholder="Nhập App Secret...">
+                </div>
+                <div class="form-group">
+                    <label>User Access Token (Short-lived):</label>
+                    <input type="text" id="fb-token" placeholder="Paste token từ Facebook Developers...">
+                    <small style="color: #888; display: block; margin-top: 5px;">
+                        🔃 Token sẽ tự động được exchange: User Token → Long-lived Token → Page Access Token
+                    </small>
+                </div>
+                <button class="btn btn-primary" onclick="setToken()">🔑 Exchange & Lưu Token</button>
+            </div>
+
+            <!-- Add Plate Card -->
+            <div class="card">
+                <h2>➕ Thêm biển số</h2>
+                <div class="form-group">
+                    <label>Biển số:</label>
+                    <input type="text" id="new-plate-number" placeholder="VD: 29A-12345">
+                </div>
+                <div class="form-group">
+                    <label>Giá (VNĐ):</label>
+                    <input type="number" id="new-plate-price" placeholder="5000000">
+                </div>
+                <div class="form-group">
+                    <label>Trạng thái:</label>
+                    <select id="new-plate-status">
+                        <option value="available">Còn hàng</option>
+                        <option value="sold">Đã bán</option>
+                        <option value="reserved">Đã giữ chỗ</option>
+                    </select>
+                </div>
+                <button class="btn btn-success" onclick="addPlate()">➕ Thêm</button>
+            </div>
+
+            <!-- AI Test Card -->
+            <div class="card">
+                <h2>🧪 Test AI</h2>
+                <div class="form-group">
+                    <label>Tin nhắn test:</label>
+                    <input type="text" id="test-message" placeholder="VD: Có biển số đẹp không?">
+                </div>
+                <button class="btn btn-primary" onclick="testAI()">🚀 Gửi test</button>
+                <div id="test-response" class="test-response hidden"></div>
+            </div>
+        </div>
+
+        <!-- Plates Table -->
+        <div class="card" style="margin-top: 20px;">
+            <h2>🚗 Danh sách biển số</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Biển số</th>
+                            <th>Giá</th>
+                            <th>Trạng thái</th>
+                            <th>Cập nhật</th>
+                            <th>Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody id="plates-table">
+                        <!-- Loaded by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Show alert
+        function showAlert(message, type = 'success') {
+            const container = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            container.appendChild(alert);
+            setTimeout(() => alert.remove(), 5000);
+        }
+
+        // Load stats
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('stat-total').textContent = data.data.total;
+                    document.getElementById('stat-available').textContent = data.data.available;
+                    document.getElementById('stat-sold').textContent = data.data.sold;
+                }
+            } catch (e) {
+                console.error('Load stats error:', e);
+            }
+        }
+
+        // Load plates
+        async function loadPlates() {
+            try {
+                const res = await fetch('/api/plates');
+                const data = await res.json();
+                const tbody = document.getElementById('plates-table');
+                
+                if (data.success && data.data.length > 0) {
+                    tbody.innerHTML = data.data.map(p => `
+                        <tr>
+                            <td>${p.id}</td>
+                            <td>${p.plate_number}</td>
+                            <td>${p.price ? p.price.toLocaleString() + ' VNĐ' : 'Liên hệ'}</td>
+                            <td><span class="badge badge-${p.status}">${p.status}</span></td>
+                            <td>${p.updated_at}</td>
+                            <td>
+                                <div class="action-btns">
+                                    <button class="btn btn-primary" onclick="editPlate('${p.plate_number}', ${p.price}, '${p.status}')">Sửa</button>
+                                    <button class="btn btn-danger" onclick="deletePlate('${p.plate_number}')">Xóa</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Chưa có biển số nào</td></tr>';
+                }
+            } catch (e) {
+                console.error('Load plates error:', e);
+            }
+        }
+
+        // Add plate
+        async function addPlate() {
+            const number = document.getElementById('new-plate-number').value;
+            const price = document.getElementById('new-plate-price').value;
+            const status = document.getElementById('new-plate-status').value;
+
+            if (!number) {
+                showAlert('Vui lòng nhập biển số!', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/plates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plate_number: number, price: parseInt(price) || 0, status })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showAlert('Đã thêm biển số!');
+                    document.getElementById('new-plate-number').value = '';
+                    document.getElementById('new-plate-price').value = '';
+                    loadPlates();
+                    loadStats();
+                } else {
+                    showAlert(data.error || 'Lỗi!', 'error');
+                }
+            } catch (e) {
+                showAlert('Lỗi kết nối!', 'error');
+            }
+        }
+
+        // Delete plate
+        async function deletePlate(plateNumber) {
+            if (!confirm(`Xóa biển số ${plateNumber}?`)) return;
+
+            try {
+                const res = await fetch(`/api/plates/${plateNumber}`, { method: 'DELETE' });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showAlert('Đã xóa!');
+                    loadPlates();
+                    loadStats();
+                } else {
+                    showAlert(data.error || 'Lỗi!', 'error');
+                }
+            } catch (e) {
+                showAlert('Lỗi kết nối!', 'error');
+            }
+        }
+
+        // Edit plate (quick update status)
+        async function editPlate(plateNumber, currentPrice, currentStatus) {
+            const newStatus = prompt('Trạng thái mới (available/sold/reserved):', currentStatus);
+            if (!newStatus || !['available', 'sold', 'reserved'].includes(newStatus)) return;
+
+            try {
+                const res = await fetch(`/api/plates/${plateNumber}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showAlert('Đã cập nhật!');
+                    loadPlates();
+                    loadStats();
+                } else {
+                    showAlert(data.error || 'Lỗi!', 'error');
+                }
+            } catch (e) {
+                showAlert('Lỗi kết nối!', 'error');
+            }
+        }
+
+        // Set AI skill
+        async function setSkill() {
+            const skill = document.getElementById('ai-skill').value;
+            
+            try {
+                const res = await fetch('/api/ai/skill', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ skill })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showAlert(`Đã đổi skill thành: ${skill}`);
+                    document.getElementById('current-skill').textContent = skill;
+                } else {
+                    showAlert(data.error || 'Lỗi!', 'error');
+                }
+            } catch (e) {
+                showAlert('Lỗi kết nối!', 'error');
+            }
+        }
+
+        // Set AI provider
+        async function setProvider() {
+            const provider = document.getElementById('ai-provider').value;
+            
+            try {
+                const res = await fetch('/api/ai/provider', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showAlert(`Đã đổi provider thành: ${provider}`);
+                    document.getElementById('current-provider').textContent = provider;
+                } else {
+                    showAlert(data.error || 'Lỗi!', 'error');
+                }
+            } catch (e) {
+                showAlert('Lỗi kết nối!', 'error');
+            }
+        }
+
+        // Set Facebook credentials (Token, App ID, App Secret)
+        async function setToken() {
+            const token = document.getElementById('fb-token').value;
+            const appId = document.getElementById('fb-app-id').value;
+            const appSecret = document.getElementById('fb-app-secret').value;
+
+            if (!token && !appId && !appSecret) {
+                showAlert('Vui lòng nhập ít nhất một giá trị!', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/config/token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        token: token || null,
+                        app_id: appId || null,
+                        app_secret: appSecret || null
+                    })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    const pageInfo = data.page_name ? ` cho page "${data.page_name}"` : '';
+                    showAlert(`✅ Đã cập nhật${pageInfo}!\n${data.message}`);
+                    document.getElementById('fb-token').value = '';
+                    document.getElementById('fb-app-id').value = '';
+                    document.getElementById('fb-app-secret').value = '';
+                    // Reload để cập nhật hiển thị token mới
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    showAlert(data.error || 'Lỗi!', 'error');
+                }
+            } catch (e) {
+                showAlert('Lỗi kết nối!', 'error');
+            }
+        }
+
+        // Test AI
+        async function testAI() {
+            const message = document.getElementById('test-message').value;
+            if (!message) {
+                showAlert('Vui lòng nhập tin nhắn!', 'error');
+                return;
+            }
+
+            const responseDiv = document.getElementById('test-response');
+            responseDiv.textContent = 'Đang chờ phản hồi...';
+            responseDiv.classList.remove('hidden');
+
+            try {
+                const res = await fetch('/api/ai/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    responseDiv.textContent = `🤖 AI: ${data.response}`;
+                } else {
+                    responseDiv.textContent = `❌ Lỗi: ${data.error}`;
+                }
+            } catch (e) {
+                responseDiv.textContent = '❌ Lỗi kết nối!';
+            }
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadPlates();
+            
+            // Set current values
+            document.getElementById('ai-skill').value = '{{ current_skill }}';
+            document.getElementById('ai-provider').value = '{{ current_provider }}';
+        });
+    </script>
+</body>
+</html>

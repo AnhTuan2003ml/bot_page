@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}Quản lý Page Config - Bot Admin{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="page-header">
+    <h1 class="page-title">📘 Quản lý Page Configuration</h1>
+    <p class="page-subtitle">Cấu hình Facebook Page và Webhook</p>
+</div>
+
+<div class="grid">
+    <!-- Facebook App ID Card -->
+    <div class="card">
+        <h2>📱 Facebook App ID</h2>
+        <div class="current-value">
+            App ID hiện tại: <strong>{{ app_id }}</strong>
+        </div>
+        <div class="form-group">
+            <label>APP_ID mới:</label>
+            <input type="text" id="fb-app-id" placeholder="Nhập App ID..." autocomplete="off">
+        </div>
+        <button class="btn btn-primary" onclick="updateAppId()">💾 Cập nhật App ID</button>
+    </div>
+
+    <!-- Facebook App Secret Card -->
+    <div class="card">
+        <h2>🔐 Facebook App Secret</h2>
+        <div class="current-value">
+            App Secret hiện tại: <strong>{{ app_secret }}</strong>
+        </div>
+        <div class="form-group">
+            <label>APP_SECRET mới:</label>
+            <input type="text" id="fb-app-secret" placeholder="Nhập App Secret..." autocomplete="off">
+        </div>
+        <button class="btn btn-primary" onclick="updateAppSecret()">💾 Cập nhật App Secret</button>
+    </div>
+
+    <!-- Facebook Token Exchange Card -->
+    <div class="card">
+        <h2>🔑 Facebook Page Token</h2>
+        <div class="current-value">
+            Page Token hiện tại: <strong>{{ page_token }}</strong>
+        </div>
+        <div class="form-group">
+            <label>User Access Token (Short-lived):</label>
+            <input type="text" id="fb-token" placeholder="Paste token từ Facebook Developers..." autocomplete="off">
+            <small style="color: var(--gray-500); display: block; margin-top: 5px; font-size: 12px;">
+                🔃 Token sẽ tự động được exchange: User Token → Long-lived Token → Page Access Token
+            </small>
+        </div>
+        <button class="btn btn-primary" onclick="exchangeAndSaveToken()">� Exchange & Lưu Token</button>
+
+        <div style="margin-top: 15px; padding: 12px; background: var(--gray-200); border-radius: var(--radius); font-size: 13px; border: 1px solid var(--gray-300);">
+            <strong style="color: var(--primary);">💡 Hướng dẫn lấy token:</strong>
+            <ol style="margin-top: 8px; padding-left: 20px; line-height: 1.6; color: var(--gray-600);">
+                <li>Truy cập <a href="https://developers.facebook.com/tools/explorer/" target="_blank" style="color: var(--primary);">Facebook Graph API Explorer</a></li>
+                <li>Chọn ứng dụng của bạn</li>
+                <li>Chọn quyền: <code style="background: var(--gray-300); padding: 2px 4px; border-radius: 4px;">pages_messaging</code></li>
+                <li>Generate Access Token (User Token)</li>
+                <li>Paste token vào đây, hệ thống sẽ tự động lấy Page Token</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- Webhook Info Card -->
+    <div class="card">
+        <h2>🔗 Webhook Configuration</h2>
+        <div class="form-group">
+            <label>Verify Token:</label>
+            <input type="text" value="{{ verify_token }}" readonly onclick="this.select()">
+        </div>
+
+        <div style="margin-top: 15px; padding: 12px; background: var(--gray-200); border-radius: var(--radius); font-size: 13px; border: 1px solid var(--gray-300);">
+            <strong style="color: var(--primary);">⚙️ Cấu hình webhook trên Facebook:</strong>
+            <ol style="margin-top: 8px; padding-left: 20px; line-height: 1.6; color: var(--gray-600);">
+                <li>Vào Facebook Developer Console</li>
+                <li>Messenger → Settings → Webhooks</li>
+                <li>Callback URL: <code style="background: var(--gray-300); padding: 2px 4px; border-radius: 4px;">/webhook</code> (đường dẫn tương đối)</li>
+                <li>Verify Token: <code style="background: var(--gray-300); padding: 2px 4px; border-radius: 4px;">{{ verify_token }}</code></li>
+                <li>Chọn các events: <code style="background: var(--gray-300); padding: 2px 4px; border-radius: 4px;">messages</code>, <code style="background: var(--gray-300); padding: 2px 4px; border-radius: 4px;">messaging_postbacks</code></li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- System Info Card -->
+    <div class="card">
+        <h2>ℹ️ Thông tin hệ thống</h2>
+        <div class="form-group">
+            <label>Environment:</label>
+            <input type="text" value="{{ 'Development' if debug else 'Production' }}" readonly>
+        </div>
+        <div class="form-group">
+            <label>App Secret:</label>
+            <input type="text" value="{{ 'Đã cấu hình' if app_secret else 'Chưa cấu hình' }}" readonly>
+        </div>
+        <div class="form-group">
+            <label>Database:</label>
+            <input type="text" value="SQLite (plates.db)" readonly>
+        </div>
+        <div class="form-group">
+            <label>Cache:</label>
+            <input type="text" value="In-memory (60s)" readonly>
+        </div>
+    </div>
+</div>
+{% endblock %}

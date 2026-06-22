@@ -1,0 +1,117 @@
+/* ==================== REPLACE verifyPageToken + related functions ==================== */
+let selectedPageForAdd = null;
+let verifiedPagesList = [];
+
+async function verifyPageToken() {
+    const appId = document.getElementById('new-app-id').value.trim();
+    const appSecret = document.getElementById('new-app-secret').value.trim();
+    const token = document.getElementById('new-page-token').value.trim();
+    const statusDiv = document.getElementById('verify-status');
+    const pageSection = document.getElementById('page-selection-section');
+    const container = document.getElementById('page-list-container');
+    const addBtn = document.getElementById('add-selected-btn');
+
+    if (!appId || !appSecret || !token) {
+        statusDiv.innerHTML = '<span style="color:#ef4444">Vui lòng nhập đầy đủ thông tin</span>';
+        return;
+    }
+
+    statusDiv.innerHTML = '<span style="color:#3b82f6">Đang lấy danh sách Page...</span>';
+    pageSection.style.display = 'none';
+    container.innerHTML = '';
+    addBtn.disabled = true;
+    selectedPageForAdd = null;
+
+    try {
+        const res = await fetch('/api/pages/verify-and-list', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({app_id: appId, app_secret: appSecret, token: token})
+        });
+        const data = await res.json();
+
+        if (data.success && data.pages?.length > 0) {
+            verifiedPagesList = data.pages;
+            statusDiv.innerHTML = `<span style="color:#22c55e">✅ Tìm thấy ${data.total} Page. Hãy chọn Page bên dưới.</span>`;
+            pageSection.style.display = 'block';
+
+            container.innerHTML = data.pages.map((page, index) => `
+                <div onclick="selectPage(${index}, this)" class="page-item"
+                     style="padding:12px;margin-bottom:8px;border:2px solid #4b5563;border-radius:8px;cursor:pointer;display:flex;gap:12px;align-items:center;">
+                    <input type="radio" name="selected_page" style="transform:scale(1.3)">
+                    <div>
+                        <strong>${page.name}</strong><br>
+                        <small style="color:#9ca3af">ID: ${page.id} ${page.category ? '• ' + page.category : ''}</small>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            statusDiv.innerHTML = `<span style="color:#ef4444">❌ ${data.error || 'Không tìm thấy Page nào'}</span>`;
+        }
+    } catch (e) {
+        statusDiv.innerHTML = `<span style="color:#ef4444">Lỗi: ${e.message}</span>`;
+    }
+}
+
+function selectPage(index, element) {
+    document.querySelectorAll('.page-item').forEach(el => el.style.border = '2px solid #4b5563');
+    element.style.border = '2px solid #22c55e';
+    selectedPageForAdd = verifiedPagesList[index];
+    document.getElementById('add-selected-btn').disabled = false;
+}
+
+async function addSelectedPage() {
+    if (!selectedPageForAdd) return alert('Vui lòng chọn Page!');
+
+    const btn = document.getElementById('add-selected-btn');
+    btn.disabled = true;
+    btn.textContent = 'Đang thêm...';
+
+    const payload = {
+        page_id: selectedPageForAdd.id,
+        page_name: selectedPageForAdd.name,
+        page_access_token: selectedPageForAdd.access_token,
+        app_id: document.getElementById('new-app-id').value.trim(),
+        app_secret: document.getElementById('new-app-secret').value.trim(),
+        ai_skill: document.getElementById('new-ai-skill').value,
+        ai_provider: document.getElementById('new-ai-provider').value,
+        ai_model: document.getElementById('new-ai-model').value.trim(),
+        ai_provider_token: document.getElementById('new-ai-provider-token').value.trim(),
+        intent_parser_provider: document.getElementById('new-intent-provider').value,
+        intent_parser_model: document.getElementById('new-intent-model').value.trim(),
+        intent_parser_token: document.getElementById('new-intent-token').value.trim(),
+    };
+
+    try {
+        const res = await fetch('/api/pages', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            alert('✅ Thêm Page thành công!');
+            closeAddPageModal();
+            if (typeof loadPages === 'function') loadPages();
+        } else {
+            alert('Lỗi: ' + (data.error || 'Không thể thêm Page'));
+            btn.disabled = false;
+            btn.textContent = '➕ Thêm Page đã chọn';
+        }
+    } catch (e) {
+        alert('Lỗi: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = '➕ Thêm Page đã chọn';
+    }
+}
+
+function closeAddPageModal() {
+    document.getElementById('add-page-modal')?.classList.add('hidden');
+    document.getElementById('page-selection-section') && (document.getElementById('page-selection-section').style.display = 'none');
+    document.getElementById('verify-status') && (document.getElementById('verify-status').innerHTML = '');
+    const btn = document.getElementById('add-selected-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '➕ Thêm Page đã chọn'; }
+    selectedPageForAdd = null;
+    verifiedPagesList = [];
+}

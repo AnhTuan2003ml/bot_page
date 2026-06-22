@@ -1,0 +1,22 @@
+<!-- THAY THẾ PHẦN USER ACCESS TOKEN BẰNG ĐOẠN NÀY -->
+<div class="form-group">
+    <label>User Access Token ngắn hạn <span style="color: red">*</span></label>
+    <div style="display: flex; gap: 10px; align-items: flex-end;">
+        <input type="text" id="new-page-token" placeholder="Dán User Access Token" style="flex: 1;" autocomplete="off">
+        <button type="button" class="btn btn-primary" onclick="fetchPageList()" style="white-space: nowrap;">
+            Lấy danh sách Page
+        </button>
+    </div>
+    <small>Sau khi lấy danh sách, chọn Page muốn thêm.</small>
+</div>
+
+<!-- DANH SÁCH PAGE -->
+<div id="page-selection-section" style="display: none; margin-top: 20px; border-top: 1px solid #374151; padding-top: 16px;">
+    <h4 style="margin-bottom: 12px; color: #e5e7eb;">Chọn Page muốn thêm:</h4>
+    <div id="page-list-container" style="max-height: 300px; overflow-y: auto; border: 1px solid #4b5563; border-radius: 8px; padding: 8px; background: #1f2937;"></div>
+    <div style="margin-top: 15px; text-align: right;">
+        <button class="btn btn-success" onclick="addSelectedPage()" id="add-selected-btn" disabled>
+            ➕ Thêm Page đã chọn
+        </button>
+    </div>
+</div>

@@ -1,0 +1,463 @@
+﻿{% extends "base.html" %}
+
+{% block title %}AI Service - Bot Admin{% endblock %}
+
+{% block content %}
+<style>
+.ai-service-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+}
+.ai-service-grid .card.full-width {
+    max-width: 1280px;
+    width: 100%;
+}
+.ai-service-grid input[type="text"],
+.ai-service-grid input[type="number"],
+.ai-service-grid select {
+    width: 100%;
+}
+.long-token-input {
+    font-family: Consolas, Monaco, monospace;
+    font-size: 13px;
+}
+</style>
+<div class="page-header">
+    <h1 class="page-title">AI Service</h1>
+    <p class="page-subtitle">Cấu hình provider, model và API key từ database. Không dùng env file.</p>
+</div>
+
+<div class="ai-service-grid">
+    <div class="card full-width">
+        <div class="card-header">
+            <div>
+                <div class="card-title">Response Writer</div>
+                <div class="card-subtitle">Tạo nội dung phản hồi cuối cùng cho khách.</div>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label>AI_PROVIDER</label>
+                <select id="AI_PROVIDER"></select>
+            </div>
+            <div class="form-group">
+                <label>Writer model</label>
+                <input type="text" id="WRITER_MODEL" placeholder="llama-3.3-70b-versatile">
+            </div>
+            <div class="form-group">
+                <label>AI_PROVIDER_TOKEN</label>
+                <input type="text" id="AI_PROVIDER_TOKEN" class="long-token-input" placeholder="API key riêng cho writer, để trống sẽ dùng key mặc định của provider" autocomplete="off">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Temperature</label>
+                    <input type="number" step="0.01" id="WRITER_TEMPERATURE">
+                </div>
+                <div class="form-group">
+                    <label>Max tokens</label>
+                    <input type="number" step="1" id="WRITER_MAX_TOKENS">
+                </div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <button class="btn btn-primary" onclick="saveWriterSettings()">Lưu cấu hình phản hồi</button>
+            <button class="btn btn-secondary" onclick="testWriterProvider()">Test writer</button>
+        </div>
+    </div>
+</div>
+
+<div class="ai-service-grid" style="margin-top: 20px;">
+    <div class="card full-width">
+        <div class="card-header">
+            <div>
+                <div class="card-title">Intent Parser</div>
+                <div class="card-subtitle">Hiểu ý định, scope và entity trước khi xử lý nghiệp vụ.</div>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label><input type="checkbox" id="USE_LLM_INTENT_PARSER"> USE_LLM_INTENT_PARSER</label>
+            </div>
+            <div class="form-group">
+                <label>INTENT_PARSER_PROVIDER</label>
+                <select id="INTENT_PARSER_PROVIDER"></select>
+            </div>
+            <div class="form-group">
+                <label>INTENT_PARSER_MODEL</label>
+                <input type="text" id="INTENT_PARSER_MODEL" placeholder="llama-3.1-8b-instant">
+            </div>
+            <div class="form-group">
+                <label>INTENT_PARSER_TOKEN</label>
+                <input type="text" id="INTENT_PARSER_TOKEN" class="long-token-input" placeholder="API key riêng cho intent parser, để trống sẽ dùng key mặc định của provider" autocomplete="off">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Temperature</label>
+                    <input type="number" step="0.01" id="INTENT_PARSER_TEMPERATURE">
+                </div>
+                <div class="form-group">
+                    <label>Max tokens</label>
+                    <input type="number" step="1" id="INTENT_PARSER_MAX_TOKENS">
+                </div>
+                <div class="form-group">
+                    <label>Timeout</label>
+                    <input type="number" step="1" id="INTENT_PARSER_TIMEOUT">
+                </div>
+                <div class="form-group">
+                    <label>Min confidence</label>
+                    <input type="number" step="0.01" min="0" max="1" id="INTENT_PARSER_MIN_CONFIDENCE">
+                </div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <button class="btn btn-primary" onclick="saveIntentSettings()">Lưu cấu hình intent</button>
+            <button class="btn btn-secondary" onclick="testIntentProvider()">Test intent parser</button>
+        </div>
+    </div>
+</div>
+
+<div class="ai-service-grid" style="margin-top: 20px;">
+    <div class="card full-width">
+        <div class="card-header">
+            <div>
+                <div class="card-title">Provider Credentials</div>
+                <div class="card-subtitle">API key và default model cho từng provider.</div>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="tabs" style="display:flex; gap:8px; margin-bottom:16px;">
+                <button class="btn btn-secondary" onclick="showProviderTab('groq')">Groq</button>
+                <button class="btn btn-secondary" onclick="showProviderTab('ollama')">Ollama</button>
+                <button class="btn btn-secondary" onclick="showProviderTab('openai')">OpenAI</button>
+            </div>
+
+            <div id="tab-groq" class="provider-tab">
+                <div class="form-group">
+                    <label>GROQ_API_KEY</label>
+                    <input type="text" id="GROQ_API_KEY" class="long-token-input" placeholder="Nhập Groq API key" autocomplete="off">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>GROQ_MODEL</label>
+                        <input type="text" id="GROQ_MODEL">
+                    </div>
+                    <div class="form-group">
+                        <label>GROQ_INTENT_MODEL</label>
+                        <input type="text" id="GROQ_INTENT_MODEL">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>GROQ_TEMPERATURE</label>
+                        <input type="number" step="0.01" id="GROQ_TEMPERATURE">
+                    </div>
+                    <div class="form-group">
+                        <label>GROQ_MAX_TOKENS</label>
+                        <input type="number" step="1" id="GROQ_MAX_TOKENS">
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-ollama" class="provider-tab hidden">
+                <div class="form-group">
+                    <label>LOCAL_LLM_URL</label>
+                    <input type="text" id="LOCAL_LLM_URL">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>OLLAMA_MODEL</label>
+                        <input type="text" id="OLLAMA_MODEL">
+                    </div>
+                    <div class="form-group">
+                        <label>OLLAMA_TIMEOUT</label>
+                        <input type="number" step="1" id="OLLAMA_TIMEOUT">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>OLLAMA_TEMPERATURE</label>
+                        <input type="number" step="0.01" id="OLLAMA_TEMPERATURE">
+                    </div>
+                    <div class="form-group">
+                        <label>OLLAMA_MAX_TOKENS</label>
+                        <input type="number" step="1" id="OLLAMA_MAX_TOKENS">
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-openai" class="provider-tab hidden">
+                <div class="form-group">
+                    <label>OPENAI_API_KEY</label>
+                    <input type="text" id="OPENAI_API_KEY" class="long-token-input" placeholder="Nhập OpenAI API key" autocomplete="off">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>OPENAI_MODEL</label>
+                        <input type="text" id="OPENAI_MODEL">
+                    </div>
+                    <div class="form-group">
+                        <label>OPENAI_TEMPERATURE</label>
+                        <input type="number" step="0.01" id="OPENAI_TEMPERATURE">
+                    </div>
+                    <div class="form-group">
+                        <label>OPENAI_MAX_TOKENS</label>
+                        <input type="number" step="1" id="OPENAI_MAX_TOKENS">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <button class="btn btn-primary" onclick="saveAiSettings()">Lưu provider credentials</button>
+        </div>
+    </div>
+</div>
+
+<div class="ai-service-grid" style="margin-top: 20px;">
+    <div class="card full-width">
+        <div class="card-header">
+            <div>
+                <div class="card-title">Test Result</div>
+                <div class="card-subtitle">Kết quả test kết nối provider.</div>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label>Tin nhắn test intent</label>
+                <input type="text" id="TEST_MESSAGE" value="co bien ha giang khong">
+            </div>
+            <pre id="test-response" class="test-response hidden"></pre>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const defaultWriterModels = {
+  groq: "llama-3.3-70b-versatile",
+  ollama: "qwen3:4b-instruct",
+  openai: "gpt-4.1-mini"
+};
+
+const defaultIntentModels = {
+  groq: "llama-3.1-8b-instant",
+  ollama: "qwen3:4b-instruct",
+  openai: "gpt-4.1-mini"
+};
+
+let aiSettings = {};
+let providers = [];
+
+function notify(message, type = 'success') {
+    if (typeof showAlert === 'function') showAlert(message, type);
+    else alert(message);
+}
+
+function looksIncompatible(provider, model) {
+  const m = (model || "").toLowerCase();
+  if (provider === "groq") return m.startsWith("qwen") || m.includes(":");
+  if (provider === "openai") return m.startsWith("qwen") || m.includes(":") || m.startsWith("llama-");
+  return false;
+}
+
+function fillProviderSelect(id, value) {
+    const select = document.getElementById(id);
+    select.innerHTML = providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    select.value = value || 'ollama';
+}
+
+function providerModelKey(provider) {
+    if (provider === 'groq') return 'GROQ_MODEL';
+    if (provider === 'openai') return 'OPENAI_MODEL';
+    return 'OLLAMA_MODEL';
+}
+
+function providerModelValue(provider) {
+    const modelKey = providerModelKey(provider);
+    const savedModel = (aiSettings[modelKey] || '').trim();
+    if (savedModel && !looksIncompatible(provider, savedModel)) return savedModel;
+    return defaultWriterModels[provider] || '';
+}
+
+function providerTokenKey(provider) {
+    if (provider === 'groq') return 'GROQ_API_KEY';
+    if (provider === 'openai') return 'OPENAI_API_KEY';
+    return '';
+}
+
+function providerTemperatureKey(provider) {
+    if (provider === 'groq') return 'GROQ_TEMPERATURE';
+    if (provider === 'openai') return 'OPENAI_TEMPERATURE';
+    return 'OLLAMA_TEMPERATURE';
+}
+
+function providerMaxTokensKey(provider) {
+    if (provider === 'groq') return 'GROQ_MAX_TOKENS';
+    if (provider === 'openai') return 'OPENAI_MAX_TOKENS';
+    return 'OLLAMA_MAX_TOKENS';
+}
+
+function fillValue(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = String(value).toLowerCase() === 'true';
+    else el.value = value ?? '';
+}
+
+function syncWriterFields() {
+    const provider = document.getElementById('AI_PROVIDER').value;
+    const tempKey = providerTemperatureKey(provider);
+    const maxKey = providerMaxTokensKey(provider);
+    fillValue('WRITER_MODEL', providerModelValue(provider));
+    fillValue('AI_PROVIDER_TOKEN', aiSettings.AI_PROVIDER_TOKEN || '');
+    fillValue('WRITER_TEMPERATURE', aiSettings[tempKey] || '0.25');
+    fillValue('WRITER_MAX_TOKENS', aiSettings[maxKey] || '300');
+}
+
+function syncIntentModelSuggestion() {
+    const provider = document.getElementById('INTENT_PARSER_PROVIDER').value;
+    const input = document.getElementById('INTENT_PARSER_MODEL');
+    if (!input.value || looksIncompatible(provider, input.value)) {
+        input.value = defaultIntentModels[provider];
+    }
+}
+
+async function loadAiSettings() {
+    const res = await fetch('/api/ai/settings');
+    const data = await res.json();
+    if (!data.success) {
+        notify(data.error || 'Load settings failed', 'error');
+        return;
+    }
+    aiSettings = data.settings || {};
+    providers = data.providers || [];
+    fillProviderSelect('AI_PROVIDER', aiSettings.AI_PROVIDER);
+    fillProviderSelect('INTENT_PARSER_PROVIDER', aiSettings.INTENT_PARSER_PROVIDER);
+
+    [
+        'GROQ_API_KEY', 'GROQ_MODEL', 'GROQ_INTENT_MODEL', 'GROQ_TEMPERATURE', 'GROQ_MAX_TOKENS',
+        'LOCAL_LLM_URL', 'OLLAMA_MODEL', 'OLLAMA_TEMPERATURE', 'OLLAMA_MAX_TOKENS', 'OLLAMA_TIMEOUT',
+        'OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENAI_TEMPERATURE', 'OPENAI_MAX_TOKENS',
+        'AI_PROVIDER_TOKEN', 'AI_MODEL', 'INTENT_PARSER_TOKEN',
+        'INTENT_PARSER_MODEL', 'INTENT_PARSER_TEMPERATURE', 'INTENT_PARSER_MAX_TOKENS',
+        'INTENT_PARSER_TIMEOUT', 'INTENT_PARSER_MIN_CONFIDENCE'
+    ].forEach(key => fillValue(key, aiSettings[key] || ''));
+    fillValue('USE_LLM_INTENT_PARSER', aiSettings.USE_LLM_INTENT_PARSER || 'true');
+    syncWriterFields();
+}
+
+function collectAllSettings() {
+    const provider = document.getElementById('AI_PROVIDER').value;
+    const modelKey = providerModelKey(provider);
+    const tempKey = providerTemperatureKey(provider);
+    const maxKey = providerMaxTokensKey(provider);
+    const payload = {
+        AI_PROVIDER: provider,
+        AI_MODEL: document.getElementById('WRITER_MODEL').value.trim(),
+        AI_PROVIDER_TOKEN: document.getElementById('AI_PROVIDER_TOKEN').value.trim(),
+        [modelKey]: document.getElementById('WRITER_MODEL').value.trim(),
+        [tempKey]: document.getElementById('WRITER_TEMPERATURE').value,
+        [maxKey]: document.getElementById('WRITER_MAX_TOKENS').value,
+        USE_LLM_INTENT_PARSER: document.getElementById('USE_LLM_INTENT_PARSER').checked ? 'true' : 'false',
+        INTENT_PARSER_PROVIDER: document.getElementById('INTENT_PARSER_PROVIDER').value,
+        INTENT_PARSER_TOKEN: document.getElementById('INTENT_PARSER_TOKEN').value.trim(),
+        INTENT_PARSER_MODEL: document.getElementById('INTENT_PARSER_MODEL').value.trim(),
+        INTENT_PARSER_TEMPERATURE: document.getElementById('INTENT_PARSER_TEMPERATURE').value,
+        INTENT_PARSER_MAX_TOKENS: document.getElementById('INTENT_PARSER_MAX_TOKENS').value,
+        INTENT_PARSER_TIMEOUT: document.getElementById('INTENT_PARSER_TIMEOUT').value,
+        INTENT_PARSER_MIN_CONFIDENCE: document.getElementById('INTENT_PARSER_MIN_CONFIDENCE').value,
+    };
+    [
+        'GROQ_API_KEY', 'GROQ_MODEL', 'GROQ_INTENT_MODEL', 'GROQ_TEMPERATURE', 'GROQ_MAX_TOKENS',
+        'LOCAL_LLM_URL', 'OLLAMA_MODEL', 'OLLAMA_TEMPERATURE', 'OLLAMA_MAX_TOKENS', 'OLLAMA_TIMEOUT',
+        'OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENAI_TEMPERATURE', 'OPENAI_MAX_TOKENS'
+    ].forEach(key => payload[key] = document.getElementById(key).value.trim());
+    payload[modelKey] = document.getElementById('WRITER_MODEL').value.trim();
+    return payload;
+}
+
+function confirmDeletingKeys(payload) {
+    const labels = [];
+    ['GROQ_API_KEY', 'OPENAI_API_KEY', 'AI_PROVIDER_TOKEN', 'INTENT_PARSER_TOKEN'].forEach(key => {
+        if ((aiSettings[key] || '').trim() && !(payload[key] || '').trim()) {
+            labels.push(key);
+        }
+    });
+    if (!labels.length) return true;
+    return confirm(`Bạn đang xoá API key: ${labels.join(', ')}. Bạn có chắc muốn lưu không?`);
+}
+
+async function saveAiSettings() {
+    const payload = collectAllSettings();
+    if (!confirmDeletingKeys(payload)) return;
+    const res = await fetch('/api/ai/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.success) {
+        aiSettings = data.settings || aiSettings;
+        notify('Đã lưu vào database', 'success');
+        await loadAiSettings();
+    } else {
+        notify(data.error || 'Save failed', 'error');
+    }
+}
+
+async function saveWriterSettings() {
+    await saveAiSettings();
+}
+
+async function saveIntentSettings() {
+    syncIntentModelSuggestion();
+    await saveAiSettings();
+}
+
+async function testProvider(role) {
+    const provider = role === 'intent'
+        ? document.getElementById('INTENT_PARSER_PROVIDER').value
+        : document.getElementById('AI_PROVIDER').value;
+    const model = role === 'intent'
+        ? document.getElementById('INTENT_PARSER_MODEL').value.trim()
+        : document.getElementById('WRITER_MODEL').value.trim();
+    const responseBox = document.getElementById('test-response');
+    responseBox.classList.remove('hidden');
+    responseBox.textContent = 'Testing...';
+    const res = await fetch('/api/ai/test-provider', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            role,
+            provider,
+            model,
+            message: document.getElementById('TEST_MESSAGE').value || 'xin chao'
+        })
+    });
+    const data = await res.json();
+    responseBox.textContent = JSON.stringify(data, null, 2);
+}
+
+function testWriterProvider() {
+    return testProvider('writer');
+}
+
+function testIntentProvider() {
+    syncIntentModelSuggestion();
+    return testProvider('intent');
+}
+
+function showProviderTab(provider) {
+    document.querySelectorAll('.provider-tab').forEach(el => el.classList.add('hidden'));
+    document.getElementById(`tab-${provider}`).classList.remove('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadAiSettings();
+    document.getElementById('AI_PROVIDER').addEventListener('change', syncWriterFields);
+    document.getElementById('INTENT_PARSER_PROVIDER').addEventListener('change', syncIntentModelSuggestion);
+});
+</script>
+{% endblock %}
+

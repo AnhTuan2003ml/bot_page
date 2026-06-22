@@ -1,0 +1,587 @@
+{% extends "base.html" %}
+
+{% block title %}Quản lý Pages - Bot Admin{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="page-header">
+    <h1 class="page-title">📱 Quản lý Facebook Pages</h1>
+    <p class="page-subtitle">Thêm, sửa, xóa pages với cấu hình riêng biệt</p>
+</div>
+
+<!-- Add Page Button -->
+<div class="card full-width" style="display: flex; justify-content: space-between; align-items: center;">
+    <h2 style="margin: 0;">📋 Danh sách Pages</h2>
+    <button class="btn btn-success" onclick="openAddPageModal()">
+        ➕ Thêm Page Mới
+    </button>
+</div>
+
+<!-- Add Page Modal Overlay -->
+<div id="add-page-modal" class="modal hidden">
+    <div class="modal-content" style="max-width: 900px; width: 94%;">
+        <div class="modal-header">
+            <h2>➕ Thêm Page Mới</h2>
+            <button class="btn btn-secondary" onclick="closeAddPageModal()" style="padding: 5px 10px;">✕</button>
+        </div>
+        <div class="modal-body">
+            <!-- Step 1: App Credentials -->
+            <div class="form-group">
+                <label>App ID <span style="color: red">*</span></label>
+                <input type="text" id="new-app-id" placeholder="Nhập Facebook App ID">
+                <small>Facebook App ID cho page này (mỗi page có thể có app riêng)</small>
+            </div>
+            <div class="form-group">
+                <label>App Secret <span style="color: red">*</span></label>
+                <input type="text" id="new-app-secret" placeholder="Nhập Facebook App Secret" autocomplete="off">
+                <small>Facebook App Secret lưu trong DB local.</small>
+            </div>
+            
+            <!-- Step 2: Enter User Token and Verify -->
+            <div class="form-group">
+                <label>User Access Token (Short-lived) <span style="color: red">*</span></label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="new-page-token" placeholder="Dán User Access Token để exchange" style="flex: 1;" autocomplete="off">
+                    <button class="btn btn-secondary" onclick="verifyPageToken()" id="verify-btn">🔍 Verify & Exchange</button>
+                </div>
+                <small>Nhập User Access Token → Tự động exchange sang Page Access Token dài hạn (sử dụng App ID/Secret ở trên)</small>
+                <div id="verify-status" style="margin-top: 8px; font-size: 13px;"></div>
+            </div>
+            
+            <!-- Step 2: Page Info (Auto-filled from Facebook) -->
+            <div class="grid-2" id="page-info-section" style="opacity: 0.5; pointer-events: none;">
+                <div class="form-group">
+                    <label>Page ID (Auto)</label>
+                    <input type="text" id="new-page-id" placeholder="Điền token và verify trước" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Page Name (Auto)</label>
+                    <input type="text" id="new-page-name" placeholder="Điền token và verify trước" readonly>
+                </div>
+            </div>
+            
+            <!-- Step 3: Page Access Token (Auto from Exchange) -->
+            <div id="page-access-token-section" style="opacity: 0.5; pointer-events: none;">
+                <div class="form-group">
+                    <label>Page Access Token (Auto) <span style="color: red">*</span></label>
+                    <input type="text" id="new-page-access-token" placeholder="Token sẽ tự động điền sau khi verify" readonly>
+                    <small>Token đã được exchange từ User Access Token, dùng để gửi tin nhắn</small>
+                </div>
+            </div>
+            
+            <!-- Step 4: Configuration -->
+            <div class="grid-2" id="config-section" style="opacity: 0.5; pointer-events: none;">
+                <div class="form-group">
+                    <label>AI Skill</label>
+                    <select id="new-ai-skill">
+                        <option value="">⏳ Đang tải...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>AI Provider</label>
+                    <select id="new-ai-provider">
+                        <option value="">⏳ Đang tải...</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Step 5: Tên người phụ trách -->
+            <div id="config-section-2" style="opacity: 0.5; pointer-events: none;">
+                <div class="form-group">
+                    <label>Tên người phụ trách</label>
+                    <input type="text" id="new-uid-nguoi-phu-trach" placeholder="Nhập tên người quản lý page (tùy chọn)">
+                    <small>Tên người chịu trách nhiệm page này</small>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeAddPageModal()">Hủy</button>
+            <button class="btn btn-primary" onclick="addPage()" id="add-page-btn" style="opacity: 0.5; pointer-events: none;">
+                💾 Thêm Page
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Pages List -->
+<div class="grid">
+    <div class="card full-width" style="padding-top: 20px;">
+        <div id="pages-list" class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Page ID</th>
+                        <th>Page Name</th>
+                        <th>Status</th>
+                        <th>Người phụ trách</th>
+                        <th>AI Skill</th>
+                        <th>Provider</th>
+                        <th>Token Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="pages-table-body">
+                    <!-- Loaded via JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Page Modal -->
+<div id="edit-modal" class="modal hidden">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>✏️ Chỉnh sửa Page</h3>
+            <button class="btn btn-secondary" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="edit-page-id">
+            <div class="form-group">
+                <label>Page Name</label>
+                <input type="text" id="edit-page-name">
+            </div>
+            <div class="form-group">
+                <label>Page Access Token</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="edit-page-token" placeholder="Dán Page Access Token" style="flex: 1;" autocomplete="off">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>App ID (Facebook App)</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="edit-app-id" placeholder="Nhập App ID..." style="flex: 1;">
+                    <button type="button" class="btn btn-secondary" onclick="copyToClipboard('edit-app-id')" title="Copy">📋</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>App Secret (Facebook App)</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="edit-app-secret" placeholder="Nhập App Secret..." style="flex: 1;" autocomplete="off">
+                    <button type="button" class="btn btn-secondary" onclick="copyToClipboard('edit-app-secret')" title="Copy">📋</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>AI Skill</label>
+                <select id="edit-ai-skill">
+                    <option value="">⏳ Đang tải...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>AI Provider</label>
+                <select id="edit-ai-provider">
+                    <option value="">⏳ Đang tải...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Tên người phụ trách</label>
+                <input type="text" id="edit-uid-nguoi-phu-trach" placeholder="Nhập tên người phụ trách">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" onclick="updatePage()">💾 Lưu thay đổi</button>
+            <button class="btn btn-secondary" onclick="closeModal()">Hủy</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="delete-modal" class="modal hidden">
+    <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-header">
+            <h3>🗑️ Xác nhận xóa</h3>
+            <button class="btn btn-secondary" onclick="closeDeleteModal()" style="padding: 5px 10px;">✕</button>
+        </div>
+        <div class="modal-body">
+            <p>Bạn có chắc chắn muốn xóa page <strong id="delete-page-name"></strong>?</p>
+            <p style="color: #ef4444; font-size: 13px; margin-top: 10px;">⚠️ Hành động này không thể hoàn tác. Page sẽ bị xóa khỏi database hoàn toàn.</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeDeleteModal()">Hủy</button>
+            <button class="btn btn-danger" onclick="confirmDelete()">🗑️ Xóa luôn</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Load pages and AI config on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadPages();
+    loadAIConfig();
+});
+
+async function loadPages() {
+    try {
+        const res = await fetch('/api/pages');
+        const data = await res.json();
+        
+        if (data.success) {
+            renderPages(data.pages);
+        }
+    } catch (e) {
+        console.error('Failed to load pages:', e);
+    }
+}
+
+async function loadAIConfig() {
+    try {
+        const res = await fetch('/api/ai-config');
+        const data = await res.json();
+        
+        if (data.success) {
+            // Store for later use in edit modal
+            window.aiConfig = data;
+            
+            // Populate add page dropdowns
+            const skillSelect = document.getElementById('new-ai-skill');
+            skillSelect.innerHTML = data.skills.map(s => 
+                `<option value="${s.id}">${s.name}</option>`
+            ).join('');
+            
+            const providerSelect = document.getElementById('new-ai-provider');
+            providerSelect.innerHTML = data.providers.map(p => 
+                `<option value="${p.id}">${p.name}</option>`
+            ).join('');
+            
+            // Populate edit modal dropdowns
+            const editSkillSelect = document.getElementById('edit-ai-skill');
+            editSkillSelect.innerHTML = data.skills.map(s => 
+                `<option value="${s.id}">${s.name}</option>`
+            ).join('');
+            
+            const editProviderSelect = document.getElementById('edit-ai-provider');
+            editProviderSelect.innerHTML = data.providers.map(p => 
+                `<option value="${p.id}">${p.name}</option>`
+            ).join('');
+        }
+    } catch (e) {
+        console.error('Failed to load AI config:', e);
+    }
+}
+
+function openAddPageModal() {
+    document.getElementById('add-page-modal').classList.remove('hidden');
+    // Reset form to initial state
+    resetAddPageForm();
+}
+
+function closeAddPageModal() {
+    document.getElementById('add-page-modal').classList.add('hidden');
+    resetAddPageForm();
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const addModal = document.getElementById('add-page-modal');
+    const deleteModal = document.getElementById('delete-modal');
+    const editModal = document.getElementById('edit-modal');
+    
+    if (event.target === addModal) {
+        closeAddPageModal();
+    }
+    if (event.target === deleteModal) {
+        closeDeleteModal();
+    }
+    if (event.target === editModal) {
+        closeModal();
+    }
+}
+
+function renderPages(pages) {
+    const tbody = document.getElementById('pages-table-body');
+    if (!pages || pages.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">Chưa có pages nào</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = pages.map(p => {
+        const isActive = p.is_active !== 0;
+        const statusBadge = isActive ? 
+            '<span class="badge" style="background: #d1fae5; color: #047857;">🟢 Active</span>' : 
+            '<span class="badge" style="background: #fee2e2; color: #b91c1c;">🔴 Inactive</span>';
+        const nguoiPhuTrachDisplay = p.uid_nguoi_phu_trach ? `<span>${p.uid_nguoi_phu_trach}</span>` : '<span style="color: #9ca3af;">-</span>';
+        
+        return `
+        <tr style="${!isActive ? 'background: rgba(254, 226, 226, 0.3);' : ''}">
+            <td><code>${p.page_id}</code></td>
+            <td><strong>${p.page_name}</strong></td>
+            <td>${statusBadge}</td>
+            <td>${nguoiPhuTrachDisplay}</td>
+            <td><span class="badge badge-${p.ai_skill}">${p.ai_skill}</span></td>
+            <td>${p.ai_provider}</td>
+            <td>${p.page_access_token ? '✅ Đã cấu hình' : '❌ Chưa có token'}</td>
+            <td>
+                <button class="btn btn-sm ${isActive ? 'btn-warning' : 'btn-success'}" onclick="togglePage('${p.page_id}')">${isActive ? '⏸️ Tắt' : '▶️ Bật'}</button>
+                <button class="btn btn-sm btn-primary" onclick="openEditModal('${p.page_id}', '${p.page_name}', '${p.ai_skill}', '${p.ai_provider}', '${p.app_id || ''}', '${p.app_secret || ''}', '${p.page_access_token || ''}', '${p.uid_nguoi_phu_trach || ''}')">✏️ Sửa</button>
+                <button class="btn btn-sm btn-danger" onclick="deletePage('${p.page_id}', '${p.page_name}')">🗑️ Xóa</button>
+            </td>
+        </tr>
+    `}).join('');
+}
+
+async function togglePage(pageId) {
+    try {
+        const res = await fetch(`/api/pages/${pageId}/toggle`, { method: 'POST' });
+        const result = await res.json();
+        
+        if (result.success) {
+            showAlert(result.message);
+            loadPages(); // Refresh list
+        } else {
+            showAlert('❌ ' + result.error, 'error');
+        }
+    } catch (e) {
+        showAlert('Lỗi: ' + e.message, 'error');
+    }
+}
+
+async function verifyPageToken() {
+    const token = document.getElementById('new-page-token').value;
+    const appId = document.getElementById('new-app-id').value.trim();
+    const appSecret = document.getElementById('new-app-secret').value.trim();
+    const statusEl = document.getElementById('verify-status');
+    const verifyBtn = document.getElementById('verify-btn');
+    
+    if (!token) {
+        statusEl.innerHTML = '<span style="color: #ef4444;">❌ Vui lòng nhập token trước</span>';
+        return;
+    }
+    
+    if (!appId || !appSecret) {
+        statusEl.innerHTML = '<span style="color: #ef4444;">❌ Vui lòng nhập App ID và App Secret trước</span>';
+        return;
+    }
+    
+    verifyBtn.disabled = true;
+    verifyBtn.textContent = '⏳ Đang exchange...';
+    statusEl.innerHTML = '<span style="color: #6366f1;">🔄 Step 1: Exchange short-lived → long-lived token...</span>';
+    
+    try {
+        const res = await fetch('/api/pages/verify-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                token: token,
+                app_id: appId,
+                app_secret: appSecret
+            })
+        });
+        const result = await res.json();
+        
+        if (result.success) {
+            // Auto-fill page info
+            document.getElementById('new-page-id').value = result.page.id;
+            document.getElementById('new-page-name').value = result.page.name;
+            
+            // Auto-fill page access token (this is the exchanged token!)
+            const tokenPreview = result.page.access_token.substring(0, 20) + '...';
+            document.getElementById('new-page-access-token').value = result.page.access_token;
+            
+            // Enable form sections
+            document.getElementById('page-info-section').style.opacity = '1';
+            document.getElementById('page-info-section').style.pointerEvents = 'auto';
+            document.getElementById('page-access-token-section').style.opacity = '1';
+            document.getElementById('page-access-token-section').style.pointerEvents = 'auto';
+            document.getElementById('config-section').style.opacity = '1';
+            document.getElementById('config-section').style.pointerEvents = 'auto';
+            document.getElementById('config-section-2').style.opacity = '1';
+            document.getElementById('config-section-2').style.pointerEvents = 'auto';
+            document.getElementById('add-page-btn').style.opacity = '1';
+            document.getElementById('add-page-btn').style.pointerEvents = 'auto';
+            
+            statusEl.innerHTML = `<span style="color: #22c55e;">✅ Exchange thành công! Page: <strong>${result.page.name}</strong><br>Token: ${tokenPreview} (${result.page.access_token.length} chars)</span>`;
+            
+            if (result.multiple_pages) {
+                showAlert(`✅ Tìm thấy ${result.pages.length} pages! Đã chọn page đầu tiên.`);
+            } else {
+                showAlert('✅ Token đã được exchange thành Page Access Token!');
+            }
+        } else {
+            statusEl.innerHTML = `<span style="color: #ef4444;">❌ ${result.error}</span>`;
+            showAlert('❌ Exchange thất bại: ' + result.error, 'error');
+        }
+    } catch (e) {
+        statusEl.innerHTML = `<span style="color: #ef4444;">❌ Lỗi: ${e.message}</span>`;
+        showAlert('Lỗi kết nối: ' + e.message, 'error');
+    } finally {
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = '🔍 Verify & Exchange';
+    }
+}
+
+async function addPage() {
+    const data = {
+        page_id: document.getElementById('new-page-id').value,
+        page_name: document.getElementById('new-page-name').value,
+        page_access_token: document.getElementById('new-page-access-token').value,
+        ai_skill: document.getElementById('new-ai-skill').value,
+        ai_provider: document.getElementById('new-ai-provider').value,
+        uid_nguoi_phu_trach: document.getElementById('new-uid-nguoi-phu-trach').value,
+        app_id: document.getElementById('new-app-id').value.trim(),
+        app_secret: document.getElementById('new-app-secret').value.trim()
+    };
+    
+    if (!data.page_id || !data.page_name || !data.page_access_token) {
+        showAlert('Vui lòng điền đầy đủ các trường bắt buộc (*)', 'error');
+        return;
+    }
+    
+    try {
+        const res = await fetch('/api/pages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        
+        if (result.success) {
+            showAlert('✅ Thêm page thành công!');
+            loadPages();
+            // Close modal
+            closeAddPageModal();
+        } else {
+            showAlert('❌ ' + result.error, 'error');
+        }
+    } catch (e) {
+        showAlert('Lỗi: ' + e.message, 'error');
+    }
+}
+
+function resetAddPageForm() {
+    document.getElementById('new-page-id').value = '';
+    document.getElementById('new-page-name').value = '';
+    document.getElementById('new-page-token').value = '';
+    document.getElementById('new-app-id').value = '';
+    document.getElementById('new-app-secret').value = '';
+    document.getElementById('new-page-access-token').value = '';
+    document.getElementById('new-uid-nguoi-phu-trach').value = '';
+    document.getElementById('verify-status').innerHTML = '';
+    
+    // Disable sections again
+    document.getElementById('page-info-section').style.opacity = '0.5';
+    document.getElementById('page-info-section').style.pointerEvents = 'none';
+    document.getElementById('page-access-token-section').style.opacity = '0.5';
+    document.getElementById('page-access-token-section').style.pointerEvents = 'none';
+    document.getElementById('config-section').style.opacity = '0.5';
+    document.getElementById('config-section').style.pointerEvents = 'none';
+    document.getElementById('config-section-2').style.opacity = '0.5';
+    document.getElementById('config-section-2').style.pointerEvents = 'none';
+    document.getElementById('add-page-btn').style.opacity = '0.5';
+    document.getElementById('add-page-btn').style.pointerEvents = 'none';
+}
+
+function openEditModal(pageId, pageName, aiSkill, aiProvider, appId, appSecret, pageToken, uidNguoiPhuTrach) {
+    document.getElementById('edit-page-id').value = pageId;
+    document.getElementById('edit-page-name').value = pageName;
+    document.getElementById('edit-ai-skill').value = aiSkill;
+    document.getElementById('edit-ai-provider').value = aiProvider;
+    document.getElementById('edit-page-token').value = pageToken || '';
+    document.getElementById('edit-app-id').value = appId || '';
+    document.getElementById('edit-app-secret').value = appSecret || '';
+    document.getElementById('edit-uid-nguoi-phu-trach').value = uidNguoiPhuTrach || '';
+    document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+function closeModal() {
+    document.getElementById('edit-modal').classList.add('hidden');
+}
+
+async function updatePage() {
+    const pageId = document.getElementById('edit-page-id').value;
+    const data = {
+        page_name: document.getElementById('edit-page-name').value,
+        ai_skill: document.getElementById('edit-ai-skill').value,
+        ai_provider: document.getElementById('edit-ai-provider').value,
+        app_id: document.getElementById('edit-app-id').value.trim(),
+        app_secret: document.getElementById('edit-app-secret').value.trim(),
+        uid_nguoi_phu_trach: document.getElementById('edit-uid-nguoi-phu-trach').value.trim()
+    };
+    
+    const newToken = document.getElementById('edit-page-token').value;
+    if (newToken) {
+        data.page_access_token = newToken;
+    }
+    
+    try {
+        const res = await fetch(`/api/pages/${pageId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        
+        if (result.success) {
+            showAlert('✅ Cập nhật thành công!');
+            closeModal();
+            loadPages();
+        } else {
+            showAlert('❌ ' + result.error, 'error');
+        }
+    } catch (e) {
+        showAlert('Lỗi: ' + e.message, 'error');
+    }
+}
+
+// Helper functions for token visibility and copy
+function toggleTokenVisibility(inputId) {
+    const input = document.getElementById(inputId);
+    if (input.type === 'password') {
+        input.type = 'text';
+    } else {
+        input.type = 'password';
+    }
+}
+
+function copyToClipboard(inputId) {
+    const input = document.getElementById(inputId);
+    input.select();
+    input.setSelectionRange(0, 99999); // For mobile
+    navigator.clipboard.writeText(input.value).then(() => {
+        showAlert('✅ Đã copy vào clipboard!');
+    }).catch(err => {
+        showAlert('❌ Không thể copy: ' + err, 'error');
+    });
+}
+
+let pageToDelete = null;
+let pageNameToDelete = '';
+
+function openDeleteModal(pageId, pageName) {
+    pageToDelete = pageId;
+    pageNameToDelete = pageName || pageId;
+    document.getElementById('delete-page-name').textContent = pageNameToDelete;
+    document.getElementById('delete-modal').classList.remove('hidden');
+}
+
+function closeDeleteModal() {
+    document.getElementById('delete-modal').classList.add('hidden');
+    pageToDelete = null;
+    pageNameToDelete = '';
+}
+
+async function confirmDelete() {
+    if (!pageToDelete) return;
+    
+    try {
+        const res = await fetch(`/api/pages/${pageToDelete}`, { method: 'DELETE' });
+        const result = await res.json();
+        
+        if (result.success) {
+            showAlert('✅ Đã xóa page khỏi database!');
+            closeDeleteModal();
+            loadPages();
+        } else {
+            showAlert('❌ ' + result.error, 'error');
+        }
+    } catch (e) {
+        showAlert('Lỗi: ' + e.message, 'error');
+    }
+}
+
+function deletePage(pageId, pageName) {
+    openDeleteModal(pageId, pageName);
+}
+</script>
+{% endblock %}
