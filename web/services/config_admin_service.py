@@ -160,6 +160,7 @@ def update_full_config(data, content_type=None):
             "config": get_admin_configs(),
             "verify_token": get_runtime_config("VERIFY_TOKEN", ""),
             "groq_key_set": bool(get_runtime_config("GROQ_API_KEY", "").strip()),
+            "gemini_key_set": bool(get_runtime_config("GEMINI_API_KEY", "").strip()),
         }, 200
     except Exception as exc:
         print(f"[CONFIG_SAVE] ERROR: {exc}")

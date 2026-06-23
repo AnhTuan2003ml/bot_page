@@ -1,4 +1,4 @@
-﻿"""
+"""
 Page Manager Module - Multi-page support
 Quáº£n lÃ½ nhiá»u Facebook Pages vá»›i token, skill, data riÃªng biá»‡t
 """
@@ -26,7 +26,7 @@ def normalize_ai_provider(provider: str) -> str:
     value = (provider or "").strip().lower()
     if value in {"local", "local_llm", "local-llm", "ollama_local"}:
         return "ollama"
-    if value in {"groq", "ollama", "openai"}:
+    if value in {"groq", "ollama", "openai", "gemini"}:
         return value
     return "ollama"
 

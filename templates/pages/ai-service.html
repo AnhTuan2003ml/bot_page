@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}AI Service - Bot Admin{% endblock %}
 
@@ -130,6 +130,7 @@
                 <button class="btn btn-secondary" onclick="showProviderTab('groq')">Groq</button>
                 <button class="btn btn-secondary" onclick="showProviderTab('ollama')">Ollama</button>
                 <button class="btn btn-secondary" onclick="showProviderTab('openai')">OpenAI</button>
+                <button class="btn btn-secondary" onclick="showProviderTab('gemini')">Gemini</button>
             </div>
 
             <div id="tab-groq" class="provider-tab">
@@ -206,6 +207,41 @@
                     </div>
                 </div>
             </div>
+
+            <div id="tab-gemini" class="provider-tab hidden">
+                <div class="form-group">
+                    <label>GEMINI_API_KEY</label>
+                    <input type="text" id="GEMINI_API_KEY" class="long-token-input" placeholder="Nhập Gemini API key" autocomplete="off">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>GEMINI_MODEL</label>
+                        <input type="text" id="GEMINI_MODEL" placeholder="gemini-2.5-flash">
+                    </div>
+                    <div class="form-group">
+                        <label>GEMINI_INTENT_MODEL</label>
+                        <input type="text" id="GEMINI_INTENT_MODEL" placeholder="gemini-2.5-flash">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>GEMINI_TEMPERATURE</label>
+                        <input type="number" step="0.01" id="GEMINI_TEMPERATURE">
+                    </div>
+                    <div class="form-group">
+                        <label>GEMINI_MAX_TOKENS</label>
+                        <input type="number" step="1" id="GEMINI_MAX_TOKENS">
+                    </div>
+                    <div class="form-group">
+                        <label>GEMINI_TIMEOUT</label>
+                        <input type="number" step="1" id="GEMINI_TIMEOUT">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>GEMINI_API_BASE_URL</label>
+                    <input type="text" id="GEMINI_API_BASE_URL" placeholder="https://generativelanguage.googleapis.com/v1beta">
+                </div>
+            </div>
         </div>
         <div class="card-footer">
             <button class="btn btn-primary" onclick="saveAiSettings()">Lưu provider credentials</button>
@@ -237,13 +273,15 @@
 const defaultWriterModels = {
   groq: "llama-3.3-70b-versatile",
   ollama: "qwen3:4b-instruct",
-  openai: "gpt-4.1-mini"
+  openai: "gpt-4.1-mini",
+  gemini: "gemini-2.5-flash"
 };
 
 const defaultIntentModels = {
   groq: "llama-3.1-8b-instant",
   ollama: "qwen3:4b-instruct",
-  openai: "gpt-4.1-mini"
+  openai: "gpt-4.1-mini",
+  gemini: "gemini-2.5-flash"
 };
 
 let aiSettings = {};
@@ -257,7 +295,8 @@ function notify(message, type = 'success') {
 function looksIncompatible(provider, model) {
   const m = (model || "").toLowerCase();
   if (provider === "groq") return m.startsWith("qwen") || m.includes(":");
-  if (provider === "openai") return m.startsWith("qwen") || m.includes(":") || m.startsWith("llama-");
+  if (provider === "openai") return m.startsWith("qwen") || m.includes(":") || m.startsWith("llama-") || m.startsWith("gemini-");
+  if (provider === "gemini") return m.startsWith("qwen") || m.includes(":") || m.startsWith("llama-") || m.startsWith("gpt-");
   return false;
 }
 
@@ -270,6 +309,7 @@ function fillProviderSelect(id, value) {
 function providerModelKey(provider) {
     if (provider === 'groq') return 'GROQ_MODEL';
     if (provider === 'openai') return 'OPENAI_MODEL';
+    if (provider === 'gemini') return 'GEMINI_MODEL';
     return 'OLLAMA_MODEL';
 }
 
@@ -283,18 +323,21 @@ function providerModelValue(provider) {
 function providerTokenKey(provider) {
     if (provider === 'groq') return 'GROQ_API_KEY';
     if (provider === 'openai') return 'OPENAI_API_KEY';
+    if (provider === 'gemini') return 'GEMINI_API_KEY';
     return '';
 }
 
 function providerTemperatureKey(provider) {
     if (provider === 'groq') return 'GROQ_TEMPERATURE';
     if (provider === 'openai') return 'OPENAI_TEMPERATURE';
+    if (provider === 'gemini') return 'GEMINI_TEMPERATURE';
     return 'OLLAMA_TEMPERATURE';
 }
 
 function providerMaxTokensKey(provider) {
     if (provider === 'groq') return 'GROQ_MAX_TOKENS';
     if (provider === 'openai') return 'OPENAI_MAX_TOKENS';
+    if (provider === 'gemini') return 'GEMINI_MAX_TOKENS';
     return 'OLLAMA_MAX_TOKENS';
 }
 
@@ -339,6 +382,8 @@ async function loadAiSettings() {
         'GROQ_API_KEY', 'GROQ_MODEL', 'GROQ_INTENT_MODEL', 'GROQ_TEMPERATURE', 'GROQ_MAX_TOKENS',
         'LOCAL_LLM_URL', 'OLLAMA_MODEL', 'OLLAMA_TEMPERATURE', 'OLLAMA_MAX_TOKENS', 'OLLAMA_TIMEOUT',
         'OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENAI_TEMPERATURE', 'OPENAI_MAX_TOKENS',
+        'GEMINI_API_KEY', 'GEMINI_MODEL', 'GEMINI_INTENT_MODEL', 'GEMINI_TEMPERATURE',
+        'GEMINI_MAX_TOKENS', 'GEMINI_TIMEOUT', 'GEMINI_API_BASE_URL',
         'AI_PROVIDER_TOKEN', 'AI_MODEL', 'INTENT_PARSER_TOKEN',
         'INTENT_PARSER_MODEL', 'INTENT_PARSER_TEMPERATURE', 'INTENT_PARSER_MAX_TOKENS',
         'INTENT_PARSER_TIMEOUT', 'INTENT_PARSER_MIN_CONFIDENCE'
@@ -371,7 +416,9 @@ function collectAllSettings() {
     [
         'GROQ_API_KEY', 'GROQ_MODEL', 'GROQ_INTENT_MODEL', 'GROQ_TEMPERATURE', 'GROQ_MAX_TOKENS',
         'LOCAL_LLM_URL', 'OLLAMA_MODEL', 'OLLAMA_TEMPERATURE', 'OLLAMA_MAX_TOKENS', 'OLLAMA_TIMEOUT',
-        'OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENAI_TEMPERATURE', 'OPENAI_MAX_TOKENS'
+        'OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENAI_TEMPERATURE', 'OPENAI_MAX_TOKENS',
+        'GEMINI_API_KEY', 'GEMINI_MODEL', 'GEMINI_INTENT_MODEL', 'GEMINI_TEMPERATURE',
+        'GEMINI_MAX_TOKENS', 'GEMINI_TIMEOUT', 'GEMINI_API_BASE_URL'
     ].forEach(key => payload[key] = document.getElementById(key).value.trim());
     payload[modelKey] = document.getElementById('WRITER_MODEL').value.trim();
     return payload;
@@ -379,7 +426,7 @@ function collectAllSettings() {
 
 function confirmDeletingKeys(payload) {
     const labels = [];
-    ['GROQ_API_KEY', 'OPENAI_API_KEY', 'AI_PROVIDER_TOKEN', 'INTENT_PARSER_TOKEN'].forEach(key => {
+    ['GROQ_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'AI_PROVIDER_TOKEN', 'INTENT_PARSER_TOKEN'].forEach(key => {
         if ((aiSettings[key] || '').trim() && !(payload[key] || '').trim()) {
             labels.push(key);
         }

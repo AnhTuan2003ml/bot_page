@@ -8,6 +8,8 @@ AI_CONFIG_KEYS = {
     "GROQ_API_KEY", "GROQ_MODEL", "GROQ_INTENT_MODEL", "GROQ_TEMPERATURE", "GROQ_MAX_TOKENS",
     "LOCAL_LLM_URL", "OLLAMA_MODEL", "OLLAMA_TEMPERATURE", "OLLAMA_MAX_TOKENS", "OLLAMA_TIMEOUT",
     "OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_TEMPERATURE", "OPENAI_MAX_TOKENS",
+    "GEMINI_API_KEY", "GEMINI_MODEL", "GEMINI_INTENT_MODEL", "GEMINI_TEMPERATURE", "GEMINI_MAX_TOKENS",
+    "GEMINI_TIMEOUT", "GEMINI_API_BASE_URL",
     "USE_LLM_INTENT_PARSER", "INTENT_PARSER_PROVIDER", "INTENT_PARSER_TOKEN", "INTENT_PARSER_MODEL",
     "INTENT_PARSER_TEMPERATURE", "INTENT_PARSER_MAX_TOKENS", "INTENT_PARSER_TIMEOUT",
     "INTENT_PARSER_MIN_CONFIDENCE",
@@ -18,7 +20,7 @@ GENERAL_CONFIG_KEYS = AI_CONFIG_KEYS | {
     "RAG_ENABLED", "RAG_KB_MODE", "RAG_TOP_K", "RAG_MIN_SCORE",
     "AI_SKILL", "DEFAULT_SKILL",
 }
-SECRET_CONFIG_KEYS = {"GROQ_API_KEY", "OPENAI_API_KEY", "VERIFY_TOKEN", "FACEBOOK_APP_SECRET"}
+SECRET_CONFIG_KEYS = {"GROQ_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "VERIFY_TOKEN", "FACEBOOK_APP_SECRET"}
 
 
 def normalize_ai_provider(provider):
@@ -76,6 +78,7 @@ def provider_options():
         {"id": "groq", "name": "☁️ Groq Cloud"},
         {"id": "ollama", "name": "🦙 Ollama Local"},
         {"id": "openai", "name": "🤖 OpenAI"},
+        {"id": "gemini", "name": "💎 Gemini"},
     ]
 
 
@@ -155,22 +158,26 @@ def sanitize_ai_config_payload(data, whitelist=AI_CONFIG_KEYS):
             updates["INTENT_PARSER_MODEL"] = get_runtime_config("GROQ_INTENT_MODEL", "llama-3.1-8b-instant")
         elif intent_provider == "openai":
             updates["INTENT_PARSER_MODEL"] = get_runtime_config("OPENAI_MODEL", "gpt-4.1-mini")
+        elif intent_provider == "gemini":
+            updates["INTENT_PARSER_MODEL"] = get_runtime_config("GEMINI_INTENT_MODEL", get_runtime_config("GEMINI_MODEL", "gemini-2.5-flash"))
         elif intent_provider == "ollama":
             updates["INTENT_PARSER_MODEL"] = get_runtime_config("OLLAMA_MODEL", "qwen3:4b-instruct")
 
     writer_provider = normalize_ai_provider(updates.get("AI_PROVIDER") or get_runtime_config("AI_PROVIDER", "ollama"))
-    writer_key = {"groq": "GROQ_MODEL", "ollama": "OLLAMA_MODEL", "openai": "OPENAI_MODEL"}[writer_provider]
+    writer_key = {"groq": "GROQ_MODEL", "ollama": "OLLAMA_MODEL", "openai": "OPENAI_MODEL", "gemini": "GEMINI_MODEL"}[writer_provider]
     if "AI_MODEL" in updates and model_looks_incompatible(writer_provider, updates["AI_MODEL"]):
         updates["AI_MODEL"] = {
             "groq": "llama-3.3-70b-versatile",
             "ollama": "qwen3:4b-instruct",
             "openai": "gpt-4.1-mini",
+            "gemini": "gemini-2.5-flash",
         }[writer_provider]
     if writer_key in updates and model_looks_incompatible(writer_provider, updates[writer_key]):
         updates[writer_key] = {
             "groq": "llama-3.3-70b-versatile",
             "ollama": "qwen3:4b-instruct",
             "openai": "gpt-4.1-mini",
+            "gemini": "gemini-2.5-flash",
         }[writer_provider]
 
     return updates

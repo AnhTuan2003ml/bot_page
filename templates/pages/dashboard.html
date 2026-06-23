@@ -237,7 +237,8 @@ function getWriterModelForProvider(provider) {
     const defaults = {
         groq: 'llama-3.3-70b-versatile',
         ollama: 'qwen3:4b-instruct',
-        openai: 'gpt-4.1-mini'
+        openai: 'gpt-4.1-mini',
+        gemini: 'gemini-2.5-flash'
     };
     return models[provider] || defaults[provider] || '';
 }
@@ -247,7 +248,8 @@ function getIntentModelForProvider(provider) {
     const defaults = {
         groq: 'llama-3.1-8b-instant',
         ollama: 'qwen3:4b-instruct',
-        openai: 'gpt-4.1-mini'
+        openai: 'gpt-4.1-mini',
+        gemini: 'gemini-2.5-flash'
     };
     return models[provider] || defaults[provider] || '';
 }

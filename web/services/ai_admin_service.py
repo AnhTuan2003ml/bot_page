@@ -48,6 +48,7 @@ def set_intent_provider(data):
             "groq": get_runtime_config("GROQ_INTENT_MODEL", "llama-3.1-8b-instant"),
             "ollama": get_runtime_config("OLLAMA_MODEL", "qwen3:4b-instruct"),
             "openai": get_runtime_config("OPENAI_MODEL", "gpt-4.1-mini"),
+            "gemini": get_runtime_config("GEMINI_INTENT_MODEL", get_runtime_config("GEMINI_MODEL", "gemini-2.5-flash")),
         }[provider]
 
     set_global_configs({

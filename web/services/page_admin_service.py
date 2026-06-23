@@ -182,11 +182,13 @@ def ai_config():
             "groq": get_runtime_config("GROQ_MODEL", "llama-3.3-70b-versatile"),
             "ollama": get_runtime_config("OLLAMA_MODEL", "qwen3:4b-instruct"),
             "openai": get_runtime_config("OPENAI_MODEL", "gpt-4.1-mini"),
+            "gemini": get_runtime_config("GEMINI_MODEL", "gemini-2.5-flash"),
         }
         intent_provider_models = {
             "groq": get_runtime_config("GROQ_INTENT_MODEL", "llama-3.1-8b-instant"),
             "ollama": get_runtime_config("OLLAMA_MODEL", "qwen3:4b-instruct"),
             "openai": get_runtime_config("OPENAI_MODEL", "gpt-4.1-mini"),
+            "gemini": get_runtime_config("GEMINI_INTENT_MODEL", get_runtime_config("GEMINI_MODEL", "gemini-2.5-flash")),
         }
         writer_model = provider_models.get(writer_provider, get_runtime_config("OLLAMA_MODEL", "qwen3:4b-instruct"))
 

@@ -1,6 +1,9 @@
 from utils.config_service import get_runtime_config, get_runtime_float, get_runtime_int
 
-from .providers import groq_provider, ollama_provider, openai_provider
+from .providers import gemini_provider, groq_provider, ollama_provider, openai_provider
+
+
+SUPPORTED_PROVIDERS = {"groq", "ollama", "openai", "gemini"}
 
 
 def normalize_provider(provider=None):
@@ -9,7 +12,7 @@ def normalize_provider(provider=None):
         selected = get_runtime_config("AI_PROVIDER", get_runtime_config("DEFAULT_AI_PROVIDER", "ollama"))
     if selected in {"local", "local_llm", "local-llm", "ollama_local"}:
         return "ollama"
-    if selected in {"groq", "ollama", "openai"}:
+    if selected in SUPPORTED_PROVIDERS:
         return selected
     print(f"[MODEL_CLIENT] Unsupported provider={selected}, fallback ollama")
     return "ollama"
@@ -21,20 +24,24 @@ def model_looks_incompatible(provider, model):
     if not m:
         return False
     if provider == "groq":
-        return m.startswith("qwen") or ":" in m
+        return m.startswith("qwen") or ":" in m or m.startswith("gpt-") or m.startswith("gemini-")
     if provider == "openai":
-        return m.startswith("qwen") or ":" in m or m.startswith("llama-")
+        return m.startswith("qwen") or ":" in m or m.startswith("llama-") or m.startswith("gemini-")
+    if provider == "gemini":
+        return m.startswith("qwen") or ":" in m or m.startswith("llama-") or m.startswith("gpt-")
     return False
 
 
 def _writer_default_model(provider, page_config=None):
     page_model = get_runtime_config("AI_MODEL", "", page_config)
-    if page_model:
+    if page_model and not model_looks_incompatible(provider, page_model):
         return page_model
     if provider == "groq":
         return get_runtime_config("GROQ_MODEL", "llama-3.3-70b-versatile", page_config)
     if provider == "openai":
         return get_runtime_config("OPENAI_MODEL", "gpt-4.1-mini", page_config)
+    if provider == "gemini":
+        return get_runtime_config("GEMINI_MODEL", "gemini-2.5-flash", page_config)
     return get_runtime_config("OLLAMA_MODEL", "qwen3:4b-instruct", page_config)
 
 
@@ -47,6 +54,12 @@ def _intent_default_model(provider, page_config=None):
         )
     if provider == "openai":
         return get_runtime_config("OPENAI_MODEL", "gpt-4.1-mini", page_config)
+    if provider == "gemini":
+        return get_runtime_config(
+            "GEMINI_INTENT_MODEL",
+            get_runtime_config("GEMINI_MODEL", "gemini-2.5-flash", page_config),
+            page_config,
+        )
     return get_runtime_config("OLLAMA_MODEL", "qwen3:4b-instruct", page_config)
 
 
@@ -76,13 +89,7 @@ def _page_int(page_config, key, config_key, default):
     return get_runtime_int(config_key, default, page_config)
 
 
-def call_model(messages, provider=None, model=None, temperature=None, max_tokens=None, page_config=None, **kwargs) -> str:
-    selected = normalize_provider(provider or get_runtime_config("AI_PROVIDER", "ollama", page_config))
-    selected_model = model or _writer_default_model(selected, page_config)
-    if model_looks_incompatible(selected, selected_model):
-        print(f"[MODEL_CLIENT] incompatible writer model={selected_model} provider={selected}, using provider default")
-        selected_model = _writer_default_model(selected, page_config)
-
+def _apply_writer_runtime_options(selected, page_config, temperature, max_tokens, kwargs):
     if selected == "groq":
         temperature = temperature if temperature is not None else _page_float(page_config, "groq_temperature", "GROQ_TEMPERATURE", 0.25)
         max_tokens = max_tokens if max_tokens is not None else _page_int(page_config, "groq_max_tokens", "GROQ_MAX_TOKENS", 300)
@@ -93,9 +100,24 @@ def call_model(messages, provider=None, model=None, temperature=None, max_tokens
     elif selected == "openai":
         temperature = temperature if temperature is not None else _page_float(page_config, "openai_temperature", "OPENAI_TEMPERATURE", 0.25)
         max_tokens = max_tokens if max_tokens is not None else _page_int(page_config, "openai_max_tokens", "OPENAI_MAX_TOKENS", 300)
+    elif selected == "gemini":
+        temperature = temperature if temperature is not None else _page_float(page_config, "gemini_temperature", "GEMINI_TEMPERATURE", 0.25)
+        max_tokens = max_tokens if max_tokens is not None else _page_int(page_config, "gemini_max_tokens", "GEMINI_MAX_TOKENS", 300)
+        kwargs.setdefault("timeout", _page_int(page_config, "gemini_timeout", "GEMINI_TIMEOUT", 60))
+    return temperature, max_tokens
+
+
+def call_model(messages, provider=None, model=None, temperature=None, max_tokens=None, page_config=None, **kwargs) -> str:
+    selected = normalize_provider(provider or get_runtime_config("AI_PROVIDER", "ollama", page_config))
+    selected_model = model or _writer_default_model(selected, page_config)
+    if model_looks_incompatible(selected, selected_model):
+        print(f"[MODEL_CLIENT] incompatible writer model={selected_model} provider={selected}, using provider default")
+        selected_model = _writer_default_model(selected, page_config)
+
+    temperature, max_tokens = _apply_writer_runtime_options(selected, page_config, temperature, max_tokens, kwargs)
 
     provider_token = get_runtime_config("AI_PROVIDER_TOKEN", "", page_config)
-    if provider_token and selected in {"groq", "openai"}:
+    if provider_token and selected in {"groq", "openai", "gemini"}:
         kwargs.setdefault("api_key", provider_token)
 
     print(f"[MODEL_CLIENT] role=writer provider={selected} model={selected_model}")
@@ -105,6 +127,8 @@ def call_model(messages, provider=None, model=None, temperature=None, max_tokens
         return ollama_provider.chat(messages, model=selected_model, temperature=temperature, max_tokens=max_tokens, **kwargs)
     if selected == "openai":
         return openai_provider.chat(messages, model=selected_model, temperature=temperature, max_tokens=max_tokens, **kwargs)
+    if selected == "gemini":
+        return gemini_provider.chat(messages, model=selected_model, temperature=temperature, max_tokens=max_tokens, **kwargs)
     raise ValueError(f"Unsupported provider: {selected}")
 
 
@@ -122,7 +146,7 @@ def call_intent_model(messages, provider=None, model=None, temperature=None, max
     kwargs.setdefault("timeout", selected_timeout)
 
     parser_token = get_runtime_config("INTENT_PARSER_TOKEN", "", page_config)
-    if parser_token and selected in {"groq", "openai"}:
+    if parser_token and selected in {"groq", "openai", "gemini"}:
         kwargs.setdefault("api_key", parser_token)
 
     print(f"[MODEL_CLIENT] role=intent provider={selected} model={selected_model}")
@@ -132,4 +156,6 @@ def call_intent_model(messages, provider=None, model=None, temperature=None, max
         return ollama_provider.chat(messages, model=selected_model, temperature=selected_temperature, max_tokens=selected_max_tokens, **kwargs)
     if selected == "openai":
         return openai_provider.chat(messages, model=selected_model, temperature=selected_temperature, max_tokens=selected_max_tokens, **kwargs)
+    if selected == "gemini":
+        return gemini_provider.chat(messages, model=selected_model, temperature=selected_temperature, max_tokens=selected_max_tokens, **kwargs)
     raise ValueError(f"Unsupported provider: {selected}")
