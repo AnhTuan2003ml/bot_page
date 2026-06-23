@@ -7,6 +7,7 @@
 <style>
 .data-toolbar { display:flex; gap:12px; align-items:end; justify-content:space-between; flex-wrap:wrap; }
 .data-toolbar-left { display:flex; gap:12px; align-items:end; flex-wrap:wrap; }
+.data-toolbar-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .data-toolbar select { min-width: 260px; background:#111827 !important; color:#e5e7eb !important; border:1px solid #334155 !important; }
 .data-toolbar select option { background:#111827; color:#e5e7eb; }
 .data-modal { max-width: 980px; width: 92vw; }
@@ -30,7 +31,11 @@
                 <select id="data-skill" class="form-control"></select>
             </div>
         </div>
-        <button class="btn btn-success" onclick="openItemModal()">＋ Thêm dữ liệu</button>
+        <div class="data-toolbar-actions">
+            <button class="btn btn-success" onclick="openItemModal()">＋ Thêm dữ liệu</button>
+            <input id="excel-file-input" type="file" accept=".xlsx,.xlsm,.csv" style="display:none" onchange="importItemsFromExcel(this)">
+            <button id="import-excel-btn" class="btn btn-primary" onclick="chooseExcelFile()">📥 Đọc từ file</button>
+        </div>
     </div>
     <div class="table-container">
         <table>
@@ -131,7 +136,7 @@ function renderTable() {
     if (!currentItems.length) { body.innerHTML = `<tr><td colspan="${fields.length + 1}" class="empty-state">Chưa có dữ liệu. Bấm “Thêm dữ liệu” để tạo bản ghi đầu tiên.</td></tr>`; return; }
     body.innerHTML = currentItems.map(item => `<tr>
         ${fields.map(f => `<td>${valueForDisplay(item, f)}</td>`).join('')}
-        <td><button class="btn btn-sm btn-primary" onclick="openItemModal(${JSON.stringify(String(item.id))})">Sửa</button> <button class="btn btn-sm btn-danger" onclick="deleteItem(${JSON.stringify(String(item.id))})">Xóa</button></td>
+        <td><button class="btn btn-sm btn-primary" onclick="openItemModal('${String(item.id).replace(/'/g, "\\'")}')">Sửa</button> <button class="btn btn-sm btn-danger" onclick="deleteItem('${String(item.id).replace(/'/g, "\\'")}')">Xóa</button></td>
     </tr>`).join('');
 }
 function fieldInput(field, value) {
@@ -172,6 +177,46 @@ function collectItemData() {
     const rowId = idField ? String(data[fieldKey(idField)] ?? '').trim() : '';
     return {id: rowId, data};
 }
+
+function chooseExcelFile() {
+    if (!selectedSkill()) return showAlert('Hãy chọn chuyên môn trước.', 'error');
+    document.getElementById('excel-file-input').click();
+}
+
+async function importItemsFromExcel(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const skill = selectedSkill();
+    if (!skill) {
+        input.value = '';
+        return showAlert('Hãy chọn chuyên môn trước.', 'error');
+    }
+
+    const btn = document.getElementById('import-excel-btn');
+    const oldText = btn ? btn.textContent : '';
+    try {
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang đọc file...'; }
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch(`/api/skills/${encodeURIComponent(skill)}/items/import-excel`, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        if (!data.success) return showAlert(data.error || 'Không import được file', 'error');
+
+        let message = `✅ ${data.message || `Đã import ${data.imported || 0} dòng.`}`;
+        if (data.errors && data.errors.length) message += '\n' + data.errors.join('\n');
+        showAlert(message, data.skipped ? 'warning' : 'success');
+        await loadItems();
+    } catch (err) {
+        showAlert('Lỗi kết nối khi đọc file Excel!', 'error');
+    } finally {
+        input.value = '';
+        if (btn) { btn.disabled = false; btn.textContent = oldText || '📥 Đọc từ file'; }
+    }
+}
+
 async function saveItem() {
     const skill = selectedSkill();
     const payload = collectItemData();

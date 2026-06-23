@@ -86,6 +86,12 @@ def api_create_skill_item(name):
     return jsonify(result), status
 
 
+@admin_bp.route("/api/skills/<path:name>/items/import-excel", methods=["POST"])
+def api_import_skill_items_excel(name):
+    result, status = skill_data_admin_service.api_import_excel_items(name, request.files.get("file"))
+    return jsonify(result), status
+
+
 @admin_bp.route("/api/skills/<path:name>/items/<path:item_id>", methods=["GET"])
 def api_get_skill_item(name, item_id):
     result, status = skill_data_admin_service.api_get_item(name, item_id)

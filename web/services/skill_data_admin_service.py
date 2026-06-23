@@ -1,5 +1,11 @@
+import csv
+import io
 import json
+import re
+import unicodedata
+import zipfile
 from urllib.parse import unquote
+from xml.etree import ElementTree as ET
 
 from database.dynamic_table_manager import delete_dynamic_row, list_dynamic_rows, upsert_dynamic_row
 from database.expertise_manager import get_expertise, list_expertises, update_expertise
@@ -190,6 +196,241 @@ def _content(d, e=None):
         label = labels.get(k, k)
         lines.append(f'{label}: {v}')
     return '\n'.join(lines)
+
+
+def _slug(value):
+    """Normalize Vietnamese/English labels to comparable keys."""
+    text = unicodedata.normalize('NFD', str(value or '').strip().lower())
+    text = ''.join(ch for ch in text if unicodedata.category(ch) != 'Mn').replace('đ', 'd')
+    text = re.sub(r'[^a-z0-9]+', '_', text).strip('_')
+    return text
+
+
+def _field_key_by_candidates(e, candidates):
+    wanted = {_slug(c) for c in candidates}
+    for field in _fields(e):
+        key = field.get('field_key') or ''
+        label = field.get('field_label') or ''
+        if _slug(key) in wanted or _slug(label) in wanted:
+            return key
+    return ''
+
+
+def _parse_money_value(value):
+    if value is None or value == '':
+        return 0
+    if isinstance(value, (int, float)):
+        return int(round(value))
+
+    text = str(value).strip().lower()
+    if not text:
+        return 0
+
+    text = text.replace('vnđ', '').replace('vnd', '').replace('đ', '')
+    text = text.replace(' ', '').replace(',', '.')
+    multiplier = 1
+    if 'triệu' in text or 'trieu' in text or text.endswith('tr'):
+        multiplier = 1_000_000
+        text = text.replace('triệu', '').replace('trieu', '')
+        text = re.sub(r'tr$', '', text)
+    elif text.endswith('m'):
+        multiplier = 1_000_000
+        text = re.sub(r'm$', '', text)
+    elif 'nghìn' in text or 'nghin' in text or text.endswith('k'):
+        multiplier = 1_000
+        text = text.replace('nghìn', '').replace('nghin', '')
+        text = re.sub(r'k$', '', text)
+
+    # 1.200.000 should be parsed as 1200000, while 1.2tr remains 1.2 * 1_000_000.
+    if text.count('.') >= 2 or (multiplier == 1 and re.fullmatch(r'\d{1,3}(\.\d{3})+', text or '')):
+        text = text.replace('.', '')
+    try:
+        return int(round(float(text) * multiplier))
+    except Exception:
+        digits = re.sub(r'\D', '', text)
+        return int(digits) if digits else 0
+
+
+def _format_cell_value(value):
+    if value is None:
+        return ''
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _read_csv_rows(raw_bytes):
+    text = raw_bytes.decode('utf-8-sig', errors='replace')
+    sample = text[:2048]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=',;\t')
+    except Exception:
+        dialect = csv.excel
+    reader = csv.reader(io.StringIO(text), dialect)
+    return [[_format_cell_value(cell) for cell in row] for row in reader]
+
+
+def _read_xlsx_rows_stdlib(raw_bytes):
+    """Small XLSX reader for simple sheets. Avoids hard dependency if openpyxl is absent."""
+    ns = {'x': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+    with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+        shared_strings = []
+        if 'xl/sharedStrings.xml' in zf.namelist():
+            root = ET.fromstring(zf.read('xl/sharedStrings.xml'))
+            for si in root.findall('x:si', ns):
+                parts = [node.text or '' for node in si.findall('.//x:t', ns)]
+                shared_strings.append(''.join(parts))
+
+        workbook = ET.fromstring(zf.read('xl/workbook.xml'))
+        first_sheet = workbook.find('x:sheets/x:sheet', ns)
+        sheet_path = 'xl/worksheets/sheet1.xml'
+        if first_sheet is not None:
+            rel_id = first_sheet.attrib.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
+            if rel_id and 'xl/_rels/workbook.xml.rels' in zf.namelist():
+                rels = ET.fromstring(zf.read('xl/_rels/workbook.xml.rels'))
+                for rel in rels:
+                    if rel.attrib.get('Id') == rel_id:
+                        target = rel.attrib.get('Target') or 'worksheets/sheet1.xml'
+                        sheet_path = 'xl/' + target.lstrip('/') if not target.startswith('xl/') else target
+                        break
+
+        root = ET.fromstring(zf.read(sheet_path))
+        rows = []
+        for row in root.findall('.//x:sheetData/x:row', ns):
+            values = []
+            last_col = 0
+            for cell in row.findall('x:c', ns):
+                ref = cell.attrib.get('r', '')
+                letters = ''.join(ch for ch in ref if ch.isalpha())
+                col_num = 0
+                for ch in letters:
+                    col_num = col_num * 26 + ord(ch.upper()) - 64
+                while last_col + 1 < col_num:
+                    values.append('')
+                    last_col += 1
+
+                cell_type = cell.attrib.get('t')
+                value_node = cell.find('x:v', ns)
+                inline_node = cell.find('x:is/x:t', ns)
+                raw_value = value_node.text if value_node is not None else (inline_node.text if inline_node is not None else '')
+                if cell_type == 's' and raw_value != '':
+                    try:
+                        raw_value = shared_strings[int(raw_value)]
+                    except Exception:
+                        pass
+                values.append(_format_cell_value(raw_value))
+                last_col = col_num or (last_col + 1)
+            rows.append(values)
+        return rows
+
+
+def _read_uploaded_rows(uploaded_file):
+    filename = (getattr(uploaded_file, 'filename', '') or '').lower()
+    raw = uploaded_file.read()
+    if not raw:
+        return []
+    if filename.endswith('.csv') or filename.endswith('.txt'):
+        return _read_csv_rows(raw)
+
+    try:
+        from openpyxl import load_workbook
+        workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        sheet = workbook.active
+        return [[_format_cell_value(cell) for cell in row] for row in sheet.iter_rows(values_only=True)]
+    except ModuleNotFoundError:
+        return _read_xlsx_rows_stdlib(raw)
+    except Exception:
+        # If openpyxl fails on a simple XLSX, try the dependency-free reader once.
+        if filename.endswith(('.xlsx', '.xlsm')):
+            return _read_xlsx_rows_stdlib(raw)
+        raise
+
+
+def _is_excel_header(row):
+    slugs = {_slug(cell) for cell in row if str(cell or '').strip()}
+    expected = {'bien_so', 'ma_bien', 'plate_number', 'gia', 'price', 'tinh', 'province'}
+    return bool(slugs & expected)
+
+
+def _value_from_row(row, header_map, index, candidates):
+    if header_map:
+        for candidate in candidates:
+            idx = header_map.get(_slug(candidate))
+            if idx is not None and idx < len(row):
+                return row[idx]
+    return row[index] if index < len(row) else ''
+
+
+def api_import_excel_items(skill_name, uploaded_file):
+    e = get_expertise(unquote(skill_name))
+    if not e or not e.get('data_table'):
+        return {'success': False, 'error': 'Chuyên môn chưa có bảng dữ liệu'}, 400
+    if not uploaded_file:
+        return {'success': False, 'error': 'Chưa chọn file Excel'}, 400
+
+    filename = (uploaded_file.filename or '').lower()
+    if not filename.endswith(('.xlsx', '.xlsm', '.csv', '.txt')):
+        return {'success': False, 'error': 'Chỉ hỗ trợ file .xlsx, .xlsm hoặc .csv'}, 400
+
+    try:
+        rows = _read_uploaded_rows(uploaded_file)
+    except Exception as exc:
+        return {'success': False, 'error': f'Không đọc được file: {exc}'}, 400
+
+    rows = [row for row in rows if any(str(cell or '').strip() for cell in row)]
+    if not rows:
+        return {'success': False, 'error': 'File không có dữ liệu'}, 400
+
+    header_map = {}
+    start_index = 0
+    if _is_excel_header(rows[0]):
+        header_map = {_slug(cell): idx for idx, cell in enumerate(rows[0]) if str(cell or '').strip()}
+        start_index = 1
+
+    plate_key = _field_key_by_candidates(e, ['plate_number', 'biển số', 'bien so', 'mã biển', 'ma bien', 'license plate']) or _field_id_key(e) or 'plate_number'
+    price_key = _field_key_by_candidates(e, ['price', 'giá', 'gia', 'giá tiền', 'gia tien']) or 'price'
+    province_key = _field_key_by_candidates(e, ['province', 'tỉnh', 'tinh', 'tỉnh thành', 'tinh thanh']) or 'province'
+    vehicle_key = _field_key_by_candidates(e, ['vehicle_type', 'loại xe', 'loai xe']) or 'vehicle_type'
+    status_key = _field_key_by_candidates(e, ['status', 'trạng thái', 'trang thai', 'tình trạng', 'tinh trang']) or 'status'
+
+    imported = 0
+    skipped = 0
+    errors = []
+
+    for excel_row_number, row in enumerate(rows[start_index:], start=start_index + 1):
+        plate_number = _format_cell_value(_value_from_row(row, header_map, 0, ['biển số', 'bien so', 'mã biển', 'ma bien', 'plate_number', 'license plate']))
+        price_value = _value_from_row(row, header_map, 1, ['giá', 'gia', 'price', 'giá tiền', 'gia tien'])
+        province = _format_cell_value(_value_from_row(row, header_map, 2, ['tỉnh', 'tinh', 'province', 'tỉnh thành', 'tinh thanh']))
+
+        if not plate_number:
+            skipped += 1
+            if len(errors) < 10:
+                errors.append(f'Dòng {excel_row_number}: thiếu biển số')
+            continue
+
+        item_data = {
+            plate_key: plate_number,
+            price_key: _parse_money_value(price_value),
+            province_key: province,
+            vehicle_key: 'ô tô',
+            status_key: 'còn',
+        }
+        try:
+            upsert_dynamic_row(e['data_table'], plate_number, _content(item_data, e))
+            imported += 1
+        except Exception as exc:
+            skipped += 1
+            if len(errors) < 10:
+                errors.append(f'Dòng {excel_row_number}: {exc}')
+
+    clear_inventory_context(e['id'])
+    return {
+        'success': True,
+        'imported': imported,
+        'skipped': skipped,
+        'errors': errors,
+        'message': f'Đã import {imported} dòng. Bỏ qua {skipped} dòng.',
+    }, 200
 
 
 def api_create_item(skill_name, payload):
