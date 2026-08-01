@@ -5,6 +5,7 @@ from .base import BaseDomainHandler, normalize_text, parse_row, pick
 PROVINCES = {
     "ha noi": "Hà Nội", "ha no": "Hà Nội", "hn": "Hà Nội",
     "thai binh": "Thái Bình", "thai bin": "Thái Bình", "tb": "Thái Bình",
+    "da nang": "Đà Nẵng", "danang": "Đà Nẵng", "dn": "Đà Nẵng",
 }
 
 
@@ -27,9 +28,13 @@ def normalize_vehicle(value):
 
 
 _STOP_PROVINCE_TOKENS = {
+    # Từ hỏi/đuôi câu không được lấy vào tên tỉnh.
     "khong", "ko", "k", "kg", "a", "ạ", "nhe", "nha", "nua",
+    "thi", "sao", "the", "vay", "nhi", "nao", "gi", "khong",
+    # Từ mô tả nhu cầu/loại xe.
     "gia", "bao", "nhieu", "con", "het", "fix", "giam", "bot",
     "xe", "oto", "o", "to", "may", "loai", "bien", "so",
+    "nhung", "cac", "minh", "ben", "co", "can", "tim",
 }
 
 
@@ -76,10 +81,9 @@ def extract_province_candidate(message: str) -> str:
         original_tokens = re.findall(r"[0-9A-Za-zÀ-ỹà-ỹĐđ]+", match.group(1))
         kept = []
         for token in original_tokens:
-            if normalize_text(token) in _STOP_PROVINCE_TOKENS:
+            token_norm = normalize_text(token)
+            if token_norm in _STOP_PROVINCE_TOKENS:
                 break
-            if normalize_text(token) in {"minh", "ben", "co", "can", "tim"}:
-                continue
             kept.append(token)
             if len(kept) >= 4:
                 break

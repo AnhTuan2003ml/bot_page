@@ -88,7 +88,7 @@ STATE_KEYS = {
 }
 PLATE_MEMORY_INTENTS = {"ASK_PRICE", "ASK_STATUS", "NEGOTIATE_PRICE"}
 VEHICLE_DISPLAY = {"oto": "ô tô", "xe_may": "xe máy"}
-PROVINCE_DISPLAY = {"ha_noi": "Hà Nội", "thai_binh": "Thái Bình"}
+PROVINCE_DISPLAY = {"ha_noi": "Hà Nội", "thai_binh": "Thái Bình", "da_nang": "Đà Nẵng"}
 
 
 def _json_loads(value, default=None):
@@ -321,7 +321,34 @@ def normalize_province(value: str) -> str:
         return PROVINCE_DISPLAY["ha_noi"]
     if norm in {"thai binh", "thai bin", "tb"} or compact in {"thaibinh", "thaibin"} or "thai binh" in norm:
         return PROVINCE_DISPLAY["thai_binh"]
+    if norm in {"da nang", "danang", "dn"} or compact in {"danang"} or "da nang" in norm:
+        return PROVINCE_DISPLAY["da_nang"]
     return str(value or "").strip()
+
+
+_PROVINCE_TAIL_STOP_WORDS = {
+    "thi", "sao", "the", "vay", "nhi", "nao", "gi",
+    "khong", "ko", "k", "kg", "nhe", "nha", "a",
+    "con", "gia", "bao", "nhieu", "xe", "oto", "o", "to", "may",
+    "nhung", "cac", "minh", "ben", "co", "can", "tim",
+}
+
+
+def clean_province_candidate(value: str) -> str:
+    kept = []
+    for token in _norm_text(value).split():
+        if token in _PROVINCE_TAIL_STOP_WORDS:
+            break
+        kept.append(token)
+        if len(kept) >= 4:
+            break
+    candidate = " ".join(kept).strip()
+    if not candidate:
+        return ""
+    known = normalize_province(candidate)
+    if known in set(PROVINCE_DISPLAY.values()):
+        return known
+    return " ".join(part.capitalize() for part in candidate.split())
 
 
 def is_followup_query(message: str) -> bool:
@@ -398,14 +425,8 @@ def _extract_local_entities(message):
         norm,
     )
     if province:
-        candidate = province.group(1).strip()
-        candidate_province = normalize_province(candidate)
-        if candidate_province in set(PROVINCE_DISPLAY.values()):
-            entities["province"] = candidate_province
-        elif (
-            candidate not in {"so", "xe", "nao"}
-            and not any(token in candidate for token in ["xe may", "o to", "oto", "thi sao", "loai xe"])
-        ):
+        candidate = clean_province_candidate(province.group(1).strip())
+        if candidate:
             entities["province"] = candidate
     if entities.get("province"):
         entities["province"] = normalize_province(entities["province"])

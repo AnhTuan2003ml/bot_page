@@ -423,6 +423,31 @@ class PipelineTests(unittest.TestCase):
         fulltext.assert_not_called()
         self.assertEqual("30A-123457 35tr e bao định danh lên căn cước ạ", reply)
 
+    def test_followup_province_question_strips_tail_words(self):
+        from domains.license_plate import extract_province_candidate
+
+        self.assertEqual("Đà Nẵng", extract_province_candidate("thế biển đà nẵng thì sao"))
+        self.assertEqual("Thái Bình", extract_province_candidate("còn biển thái bình không"))
+        self.assertEqual("", extract_province_candidate("bên mình có những biển nào"))
+
+    def test_followup_da_nang_does_not_keep_thi_sao_in_reply(self):
+        state = {"vehicle_type": "ô tô", "selected_province": "Thái Bình"}
+        with (
+            patch("brain.pipeline.get_conversation_state", return_value=state),
+            patch("brain.pipeline.get_recent_conversations", return_value=[]),
+            patch("brain.pipeline.upsert_conversation_state"),
+            patch("brain.pipeline.add_conversation"),
+            patch("brain.pipeline.list_dynamic_rows", return_value=[]),
+            patch("brain.pipeline.search_dynamic_rows"),
+            patch("brain.pipeline.call_intent_model", return_value='{"intent":"UNKNOWN"}'),
+            patch("brain.pipeline.call_model", return_value=""),
+        ):
+            reply = process_message("test", "thế biển đà nẵng thì sao", page_config=context())
+
+        self.assertIn("Đà Nẵng", reply)
+        self.assertNotIn("Thì Sao", reply)
+        self.assertNotIn("Đà Nẵng Thì Sao", reply)
+
 
 if __name__ == "__main__":
     unittest.main()

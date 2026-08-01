@@ -68,7 +68,7 @@ if errorlevel 1 goto BUILD_ERROR
 
 REM KHONG dung requirements.txt vi trong do co pytest/dev dependency.
 REM Chi cai thu vien runtime can cho app + PyInstaller.
-"%PY%" -m pip install Flask requests openai groq pyinstaller
+"%PY%" -m pip install Flask requests openai groq openpyxl xlrd pyinstaller
 if errorlevel 1 goto BUILD_ERROR
 
 echo.
@@ -83,7 +83,14 @@ echo === Tao spec tam ===
 >> "%SPEC_FILE%" echo     pathex=[],
 >> "%SPEC_FILE%" echo     binaries=[],
 >> "%SPEC_FILE%" echo     datas=[('templates', 'templates'), ('static', 'static')],
->> "%SPEC_FILE%" echo     hiddenimports=[],
+>> "%SPEC_FILE%" echo     hiddenimports=[
+>> "%SPEC_FILE%" echo         'openpyxl',
+>> "%SPEC_FILE%" echo         'openpyxl.cell._writer',
+>> "%SPEC_FILE%" echo         'openpyxl.styles',
+>> "%SPEC_FILE%" echo         'openpyxl.utils',
+>> "%SPEC_FILE%" echo         'openpyxl.worksheet._reader',
+>> "%SPEC_FILE%" echo         'openpyxl.reader.excel',
+>> "%SPEC_FILE%" echo     ],
 >> "%SPEC_FILE%" echo     hookspath=[],
 >> "%SPEC_FILE%" echo     hooksconfig={},
 >> "%SPEC_FILE%" echo     runtime_hooks=[],
