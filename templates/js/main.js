@@ -635,3 +635,216 @@ function getCurrentPageId() {
 function clearCurrentPage() {
     localStorage.removeItem('current_page_id');
 }
+
+// ==================== APP UPDATE (từ GitHub Release) ====================
+
+let updatePollTimer = null;
+let updateModalData = null;
+
+function showUpdateModal() {
+    const modal = document.getElementById('update-modal');
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+}
+
+function closeUpdateModal() {
+    const modal = document.getElementById('update-modal');
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+    stopUpdatePoll();
+    document.getElementById('update-cancel-btn').style.display = '';
+    document.getElementById('update-confirm-btn').style.display = 'none';
+    document.getElementById('update-progress-wrap').style.display = 'none';
+    document.getElementById('update-check-result').innerHTML = '';
+    document.getElementById('nav-update-btn').classList.remove('disabled');
+}
+
+function setUpdateModalBusy(busy, text) {
+    const btn = document.getElementById('nav-update-btn');
+    if (btn) {
+        btn.textContent = text || (busy ? '⏳ Đang cập nhật...' : '🔄 Cập nhật');
+        btn.classList.toggle('disabled', busy);
+    }
+    document.getElementById('update-cancel-btn').style.display = busy ? 'none' : '';
+    document.getElementById('update-confirm-btn').style.display = 'none';
+}
+
+function setUpdateProgress(pct, text) {
+    document.getElementById('update-progress-wrap').style.display = 'block';
+    if (pct !== undefined) {
+        document.getElementById('update-progress-bar').style.width = pct + '%';
+    }
+    if (text !== undefined) {
+        document.getElementById('update-status-text').textContent = text;
+    }
+}
+
+function stopUpdatePoll() {
+    if (updatePollTimer) {
+        clearInterval(updatePollTimer);
+        updatePollTimer = null;
+    }
+}
+
+function renderUpdateCheck(data) {
+    const current = data.current_version || '?';
+    const latest = data.latest_version || data.tag || '?';
+    let body = '';
+    if (data.body) {
+        body = `<div class="release-name">📝 Ghi chú phát hành:</div><div class="release-body">${escapeHtml(data.body)}</div>`;
+    }
+    document.getElementById('update-check-result').innerHTML = `
+        <div class="version-pair">
+            <div class="version-box">
+                <div class="version-label">Phiên bản hiện tại</div>
+                <div class="version-value">${escapeHtml(current)}</div>
+            </div>
+            <div class="version-arrow">➜</div>
+            <div class="version-box">
+                <div class="version-label">Phiên bản mới</div>
+                <div class="version-value" style="color: var(--primary);">${escapeHtml(latest)}</div>
+            </div>
+        </div>
+        ${body}
+    `;
+}
+
+function escapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+async function updateAppFromNav(event) {
+    if (event) event.preventDefault();
+    await openUpdateCheck();
+}
+
+async function openUpdateCheck() {
+    setUpdateModalBusy(true, '⏳ Đang kiểm tra...');
+    document.getElementById('update-check-result').innerHTML = '<p style="color: var(--gray-500);">Đang kiểm tra phiên bản mới...</p>';
+    showUpdateModal();
+
+    try {
+        const res = await fetch('/api/app/update/check');
+        const data = await res.json();
+        if (!data.success) {
+            document.getElementById('update-check-result').innerHTML =
+                `<p class="text-error">❌ ${escapeHtml(data.error || 'Không kiểm tra được bản mới')}</p>`;
+            setUpdateModalBusy(false);
+            return;
+        }
+        renderUpdateCheck(data);
+        updateModalData = data;
+        setUpdateModalBusy(false);
+        if (data.has_update) {
+            document.getElementById('update-confirm-btn').style.display = '';
+        } else {
+            document.getElementById('update-cancel-btn').textContent = 'Đóng';
+            document.getElementById('update-cancel-btn').style.display = '';
+        }
+    } catch (err) {
+        document.getElementById('update-check-result').innerHTML =
+            `<p class="text-error">❌ Lỗi kết nối: ${escapeHtml(err.message)}</p>`;
+        setUpdateModalBusy(false);
+        document.getElementById('update-cancel-btn').style.display = '';
+    }
+}
+
+async function confirmApplyUpdate() {
+    const confirmBtn = document.getElementById('update-confirm-btn');
+    confirmBtn.style.display = 'none';
+    document.getElementById('update-cancel-btn').style.display = 'none';
+    setUpdateModalBusy(true, '⏳ Đang cập nhật...');
+    setUpdateProgress(0, 'Bắt đầu cập nhật...');
+
+    try {
+        const res = await fetch('/api/app/update', { method: 'POST' });
+        const data = await res.json();
+        if (!data.success) {
+            setUpdateProgress(0, '');
+            document.getElementById('update-check-result').innerHTML +=
+                `<p class="text-error">❌ ${escapeHtml(data.error || 'Không bắt đầu được cập nhật')}</p>`;
+            setUpdateModalBusy(false);
+            document.getElementById('update-cancel-btn').style.display = '';
+            return;
+        }
+        setUpdateProgress(5, 'Đã bắt đầu cập nhật. Đang tải bản mới...');
+        showUpdateAlert('Đã bắt đầu cập nhật. App sẽ tự khởi động lại!', 'success');
+        stopUpdatePoll();
+        updatePollTimer = setInterval(pollUpdateStatus, 1500);
+    } catch (err) {
+        setUpdateProgress(0, '');
+        document.getElementById('update-check-result').innerHTML +=
+            `<p class="text-error">❌ Lỗi kết nối: ${escapeHtml(err.message)}</p>`;
+        setUpdateModalBusy(false);
+        document.getElementById('update-cancel-btn').style.display = '';
+    }
+}
+
+async function pollUpdateStatus() {
+    try {
+        const res = await fetch('/api/app/update/status');
+        if (!res.ok) {
+            stopUpdatePoll();
+            setUpdateProgress(100, 'Đã cập nhật xong! App đang khởi động lại bản mới...');
+            showUpdateAlert('✅ Đã cập nhật xong!', 'success');
+            scheduleReloadAfterRestart(1000);
+            return;
+        }
+        const data = await res.json();
+        if (data.status === 'done') {
+            stopUpdatePoll();
+            setUpdateProgress(100, data.message || 'Cập nhật thành công');
+            showUpdateAlert('✅ ' + (data.message || 'Cập nhật thành công'), 'success');
+            document.getElementById('update-cancel-btn').textContent = 'Đóng';
+            document.getElementById('update-cancel-btn').style.display = '';
+            scheduleReloadAfterRestart(2000);
+        } else if (data.status === 'error') {
+            stopUpdatePoll();
+            setUpdateProgress(0, '');
+            document.getElementById('update-check-result').innerHTML +=
+                `<p class="text-error">❌ ${escapeHtml(data.message || 'Cập nhật thất bại')}</p>`;
+            setUpdateModalBusy(false);
+            document.getElementById('update-cancel-btn').style.display = '';
+        } else if (data.status === 'restarting') {
+            stopUpdatePoll();
+            setUpdateProgress(100, 'App đang khởi động lại bản mới...');
+            scheduleReloadAfterRestart(3000);
+        } else {
+            setUpdateProgress(undefined, data.message || 'Đang cập nhật...');
+        }
+    } catch (err) {
+        stopUpdatePoll();
+        setUpdateProgress(100, 'App đang khởi động lại bản mới...');
+        showUpdateAlert('Đang khởi động lại bản mới...', 'info');
+        scheduleReloadAfterRestart(3000);
+    }
+}
+
+function scheduleReloadAfterRestart(initialDelay) {
+    setTimeout(() => {
+        let attempts = 0;
+        const MAX_ATTEMPTS = 20;
+        const retry = (attempt) => {
+            fetch('/api/app/update/status', { cache: 'no-store' })
+                .then((r) => {
+                    location.reload();
+                })
+                .catch(() => {
+                    if (attempt < MAX_ATTEMPTS) {
+                        setTimeout(() => retry(attempt + 1), 2000);
+                    } else {
+                        location.reload();
+                    }
+                });
+        };
+        retry(0);
+    }, initialDelay);
+}
+
+function showUpdateAlert(message, type) {
+    showAlert(message, type);
+}
+
+

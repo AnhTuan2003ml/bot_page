@@ -21,6 +21,11 @@ from utils.config_service import load_config_cache, get_runtime_config, get_runt
 
 # Ensure runtime dirs (data, debug, database, etc.) exist next to exe/source
 ensure_runtime_dirs()
+try:
+    from updater import cleanup_pending_update
+    cleanup_pending_update()
+except Exception:
+    pass
 init_config_table()
 print("Config table initialized")
 seed_default_configs(overwrite=False)
@@ -30,6 +35,17 @@ print("Config cache ready")
 
 # Create Flask app with template and static folders
 app = Flask(__name__, template_folder='templates', static_folder='static', static_url_path='/static')
+
+# Luôn reload template khi file thay đổi (không cần đóng/khởi động lại app)
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+
+
+@app.after_request
+def no_cache(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 # Tắt Flask/Werkzeug logs để console chỉ hiện app logs
 import logging
@@ -65,6 +81,15 @@ runtime_store.load_all()
 # Register admin blueprint
 from controls import admin_bp
 app.register_blueprint(admin_bp)
+
+
+@app.context_processor
+def inject_global_context():
+    try:
+        from updater import get_current_version
+        return {"config_version": get_current_version()}
+    except Exception:
+        return {"config_version": ""}
 
 
 def verify_webhook_token_multi(mode: str, token: str, challenge: str):
@@ -123,16 +148,17 @@ def receive_message():
     from services.runtime_context import get_cached_app_secrets, get_cached_page
     
     signature = request.headers.get('X-Hub-Signature', '').replace('sha1=', '')
+    signature256 = request.headers.get('X-Hub-Signature-256', '').replace('sha256=', '')
     payload = request.get_data()
     
     # Xác minh chữ ký với tất cả app secrets trong database (multi-app support)
     # Không còn dùng global app secret từ env file - chỉ dùng database
     app_secrets = get_cached_app_secrets()
     
-    # Thử verify với tất cả app secrets
+    # Thử verify với tất cả app secrets (hỗ trợ cả SHA1 lẫn SHA256)
     verified = False
     for secret in app_secrets:
-        if secret and verify_signature(payload, signature, secret):
+        if secret and verify_signature(payload, signature, signature256, secret):
             verified = True
             break
     

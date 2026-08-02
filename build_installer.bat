@@ -1,8 +1,8 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set APP_NAME=AutoBotPanel
-set ENTRY_FILE=desktop_panel.py
+set APP_NAME=AutoBotPanelInstaller
+set ENTRY_FILE=installer.py
 set VENV_DIR=.build_venv
 set DIST_DIR=dist
 set BUILD_DIR=build
@@ -20,13 +20,14 @@ mkdir "%DIST_DIR%" >nul 2>nul
 
 if not exist "%ENTRY_FILE%" (
     echo [ERROR] Khong tim thay %ENTRY_FILE%.
-    echo Hay dat build_exe.bat o thu muc goc du an, cung cap voi desktop_panel.py.
+    echo Hay dat build_installer.bat o thu muc goc du an, cung cap voi installer.py.
     pause
     exit /b 1
 )
 
-if not exist "app.py" (
-    echo [ERROR] Khong tim thay app.py.
+if not exist "updater.py" (
+    echo [ERROR] Khong tim thay updater.py.
+    echo Installer can updater.py de tai release tu GitHub.
     pause
     exit /b 1
 )
@@ -37,7 +38,7 @@ if exist "%ICON_FILE%" (
     echo [OK] Dung icon: %ICON_FILE%
     set SPEC_ICON=icon='templates\\logo.ico',
 ) else (
-    echo [WARNING] Khong tim thay %ICON_FILE%. EXE se dung icon mac dinh.
+    echo [WARNING] Khong tim thay %ICON_FILE%. Installer se dung icon mac dinh.
     set SPEC_ICON=icon=None,
 )
 
@@ -62,13 +63,10 @@ if not exist "%PY%" (
 )
 
 echo.
-echo === Cai thu vien runtime + PyInstaller ===
+echo === Cai PyInstaller ===
 "%PY%" -m pip install --upgrade pip
 if errorlevel 1 goto BUILD_ERROR
-
-REM KHONG dung requirements.txt vi trong do co pytest/dev dependency.
-REM Chi cai thu vien runtime can cho app + PyInstaller.
-"%PY%" -m pip install Flask requests openai groq openpyxl xlrd pyinstaller
+"%PY%" -m pip install pyinstaller
 if errorlevel 1 goto BUILD_ERROR
 
 echo.
@@ -82,22 +80,16 @@ echo === Tao spec tam ===
 >> "%SPEC_FILE%" echo     ['%ENTRY_FILE%'],
 >> "%SPEC_FILE%" echo     pathex=[],
 >> "%SPEC_FILE%" echo     binaries=[],
->> "%SPEC_FILE%" echo     datas=[('templates', 'templates'), ('static', 'static')],
+>> "%SPEC_FILE%" echo     datas=[],
 >> "%SPEC_FILE%" echo     hiddenimports=[
 >> "%SPEC_FILE%" echo         'updater',
->> "%SPEC_FILE%" echo         'openpyxl',
->> "%SPEC_FILE%" echo         'openpyxl.cell._writer',
->> "%SPEC_FILE%" echo         'openpyxl.styles',
->> "%SPEC_FILE%" echo         'openpyxl.utils',
->> "%SPEC_FILE%" echo         'openpyxl.worksheet._reader',
->> "%SPEC_FILE%" echo         'openpyxl.reader.excel',
 >> "%SPEC_FILE%" echo     ],
 >> "%SPEC_FILE%" echo     hookspath=[],
 >> "%SPEC_FILE%" echo     hooksconfig={},
 >> "%SPEC_FILE%" echo     runtime_hooks=[],
 >> "%SPEC_FILE%" echo     excludes=[
 >> "%SPEC_FILE%" echo         'pytest','unittest','doctest','test','tests',
->> "%SPEC_FILE%" echo         'IPython','jupyter','notebook',
+>> "%SPEC_FILE%" echo         'Flask','requests','openai','groq','openpyxl','xlrd',
 >> "%SPEC_FILE%" echo         'numpy','pandas','matplotlib','scipy',
 >> "%SPEC_FILE%" echo         'torch','tensorflow','transformers','sklearn',
 >> "%SPEC_FILE%" echo         'pygame','PyQt5','PyQt6'
@@ -137,35 +129,6 @@ echo === Dong goi EXE one-file windowed ===
 if errorlevel 1 goto BUILD_ERROR
 
 echo.
-echo === Copy DB vao dist\database va copy debug ===
-if not exist "%DIST_DIR%\database" mkdir "%DIST_DIR%\database"
-if not exist "%DIST_DIR%\debug" mkdir "%DIST_DIR%\debug"
-
-if exist "version.txt" (
-    copy /y "version.txt" "%DIST_DIR%\version.txt" >nul
-    echo [OK] Version: %DIST_DIR%\version.txt
-)
-
-if exist "database\plates.db" (
-    copy /y "database\plates.db" "%DIST_DIR%\database\plates.db" >nul
-    echo [OK] Database: %DIST_DIR%\database\plates.db
-) else if exist "plates.db" (
-    copy /y "plates.db" "%DIST_DIR%\database\plates.db" >nul
-    echo [OK] Database: %DIST_DIR%\database\plates.db
-) else (
-    echo [WARNING] Khong tim thay database\plates.db hoac plates.db de copy.
-)
-
-if exist "debug" (
-    if exist "%DIST_DIR%\debug" rmdir /s /q "%DIST_DIR%\debug"
-    xcopy "debug" "%DIST_DIR%\debug" /e /i /y >nul
-    echo [OK] Debug: %DIST_DIR%\debug\
-) else (
-    mkdir "%DIST_DIR%\debug" >nul 2>nul
-    echo [OK] Tao thu muc debug rong: %DIST_DIR%\debug\
-)
-
-echo.
 echo === Don rac, chi giu dist ===
 if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
 if exist "%SPEC_FILE%" del /f /q "%SPEC_FILE%"
@@ -174,10 +137,10 @@ if exist "%VENV_DIR%" rmdir /s /q "%VENV_DIR%"
 echo.
 echo [OK] Build xong.
 echo - EXE: %DIST_DIR%\%APP_NAME%.exe
-echo - DB : %DIST_DIR%\database\plates.db
-echo - LOG: %DIST_DIR%\debug\
 echo.
-echo Neu Explorer van hien icon cu, bam F5 hoac restart Explorer vi Windows co cache icon.
+echo Luu y: sau khi build, dung file %APP_NAME%.exe de cai AutoBotPanel.
+echo De cho app tu cap nhat qua web UI, hay dang release kem file .zip chua AutoBotPanel.exe.
+echo.
 pause
 exit /b 0
 

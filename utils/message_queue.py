@@ -204,6 +204,32 @@ def add_to_queue(message_data: Dict[str, Any]) -> int:
     return position
 
 
+def clear_queue_for_page(page_id: str) -> int:
+    """Xóa toàn bộ tin nhắn đang chờ xử lý của một page (dùng khi tắt bot page đó)."""
+    page_id = str(page_id or "")
+    drained = []
+    while True:
+        try:
+            drained.append(_message_queue.get_nowait())
+        except queue.Empty:
+            break
+
+    for _ in drained:
+        _message_queue.task_done()
+
+    removed = 0
+    for item in drained:
+        item_page = _get_conversation_key(item).split(":", 1)[0]
+        if item_page == page_id:
+            removed += 1
+        else:
+            _message_queue.put(item)
+
+    if removed:
+        info(f"[QUEUE] Removed {removed} pending message(s) for page {page_id}")
+    return removed
+
+
 def get_queue_status() -> Dict[str, Any]:
     """Return queue status."""
     alive_count = sum(1 for worker in _worker_threads if worker.is_alive()) if _worker_threads else 0

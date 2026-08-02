@@ -304,6 +304,23 @@
     </form>
 </div>
 
+<!-- Cập nhật ứng dụng -->
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <div class="card-title">🔄 Cập nhật ứng dụng</div>
+    </div>
+    <div class="config-group" style="border: none; background: none;">
+        <p style="margin: 0 0 12px 0; color: var(--gray-600); font-size: 13px;">
+            Tải bản mới nhất từ GitHub Release, giải nén và ghi đè lên exe hiện tại,
+            sau đó app tự khởi động lại.
+        </p>
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary" onclick="checkAppUpdate()" id="update-check-btn">🔍 Kiểm tra bản mới</button>
+            <span id="update-version" style="font-family: monospace; font-size: 13px; color: var(--gray-600);"></span>
+        </div>
+    </div>
+</div>
+
 <!-- Webhook URL is static default -->
 <script>
 // Set default webhook URL
@@ -325,6 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Set default webhook URL
     document.getElementById('webhook-url').textContent = 'http://127.0.0.1:5000/webhook';
+    loadCurrentVersion();
 });
 
 function resetForm() {
@@ -351,9 +369,37 @@ function generateVerifyToken() {
     showAlert('Đã tạo token mới. Nhấn "Lưu cấu hình" để áp dụng!', 'info');
 }
 
+// === Cập nhật ứng dụng (dùng chung popup overlay) ===
+async function checkAppUpdate() {
+    openUpdateCheck();
+}
+
+async function applyAppUpdate() {
+    openUpdateCheck();
+}
+
+async function loadCurrentVersion() {
+    const verEl = document.getElementById('update-version');
+    if (!verEl) return;
+    try {
+        const res = await fetch('/api/app/update/check');
+        const data = await res.json();
+        if (data.success) {
+            const has = data.has_update
+                ? ` — có bản mới <span style="color: var(--primary); font-weight: 700;">${data.latest_version}</span>`
+                : (data.latest_version && data.latest_version !== data.current_version
+                    ? ` — bản mới nhất: <span style="color: var(--primary); font-weight: 700;">${data.latest_version}</span>`
+                    : ' — đã là bản mới nhất ✅');
+            verEl.innerHTML = `Phiên bản hiện tại: <strong>${data.current_version}</strong>${has}`;
+        }
+    } catch (e) {
+        verEl.textContent = 'Không thể kiểm tra phiên bản';
+    }
+}
+
+
 // Handle form submit
-document.getElementById('config-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
+document.getElementById('config-form').addEventListener('submit', async (e) => {    e.preventDefault();
     
     const formData = new FormData(e.target);
     const config = {};

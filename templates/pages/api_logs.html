@@ -92,24 +92,24 @@
 }
 
 .stat-card {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: linear-gradient(135deg, #886d49 0%, #6b5538 100%);
+    color: #fffcf5;
     padding: 20px;
     border-radius: 12px;
     text-align: center;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 14px rgba(136, 109, 73, 0.3);
 }
 
 .stat-card.incoming {
-    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    background: linear-gradient(135deg, #8fae6e 0%, #5f7d43 100%);
 }
 
 .stat-card.outgoing {
-    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    background: linear-gradient(135deg, #b08a52 0%, #7d6138 100%);
 }
 
 .stat-card.error {
-    background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+    background: linear-gradient(135deg, #c97b63 0%, #a85d47 100%);
 }
 
 .stat-card h3 {
@@ -131,9 +131,10 @@
 
 .filter-bar select {
     padding: 8px 12px;
-    border: 1px solid #ddd;
+    border: 1px solid #3d3527;
     border-radius: 6px;
-    background: white;
+    background: #17140f;
+    color: #e8e0cd;
 }
 
 .direction-badge {
@@ -145,13 +146,13 @@
 }
 
 .direction-badge.incoming {
-    background: #d4edda;
-    color: #155724;
+    background: rgba(143, 174, 110, 0.2);
+    color: #b8d29a;
 }
 
 .direction-badge.outgoing {
-    background: #cce5ff;
-    color: #004085;
+    background: rgba(176, 138, 82, 0.2);
+    color: #d4b98c;
 }
 
 .status-badge {
@@ -163,18 +164,18 @@
 }
 
 .status-badge.success {
-    background: #d4edda;
-    color: #155724;
+    background: rgba(143, 174, 110, 0.2);
+    color: #b8d29a;
 }
 
 .status-badge.error {
-    background: #f8d7da;
-    color: #721c24;
+    background: rgba(201, 123, 99, 0.22);
+    color: #e0a18c;
 }
 
 .status-badge.warning {
-    background: #fff3cd;
-    color: #856404;
+    background: rgba(214, 168, 91, 0.2);
+    color: #e6c289;
 }
 
 .api-type-badge {
@@ -185,28 +186,28 @@
 }
 
 .api-type-badge.facebook_webhook {
-    background: #e3f2fd;
-    color: #1565c0;
+    background: rgba(147, 160, 215, 0.2);
+    color: #c2ccf0;
 }
 
 .api-type-badge.facebook_graph {
-    background: #fff3e0;
-    color: #e65100;
+    background: rgba(214, 168, 91, 0.2);
+    color: #e6c289;
 }
 
 .api-type-badge.groq {
-    background: #f3e5f5;
-    color: #6a1b9a;
+    background: rgba(214, 143, 174, 0.2);
+    color: #e0a8c4;
 }
 
 .api-type-badge.local_llm {
-    background: #e8f5e9;
-    color: #2e7d32;
+    background: rgba(143, 174, 110, 0.2);
+    color: #b8d29a;
 }
 
 .duration {
     font-family: monospace;
-    color: #666;
+    color: #9a8f7a;
 }
 
 .modal {
@@ -217,12 +218,12 @@
     top: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.5);
+    background: rgba(5, 4, 3, 0.75);
 }
 
 .modal-content {
-    background: #1e1e2e;
-    color: #e0e0e0;
+    background: #1b1712;
+    color: #cfc6b2;
     margin: 5% auto;
     padding: 20px;
     border-radius: 12px;
@@ -230,8 +231,8 @@
     max-width: 800px;
     max-height: 80vh;
     overflow-y: auto;
-    border: 1px solid #3a3a4a;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    border: 1px solid rgba(176, 138, 82, 0.3);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.55);
 }
 
 .close {
@@ -239,43 +240,43 @@
     font-size: 28px;
     font-weight: bold;
     cursor: pointer;
-    color: #aaa;
+    color: #9a8f7a;
 }
 
 .close:hover {
-    color: #ff416c;
+    color: #b08a52;
 }
 
 .detail-section {
     margin: 15px 0;
     padding: 15px;
-    background: #2a2a3a;
+    background: rgba(16, 14, 11, 0.7);
     border-radius: 8px;
-    border: 1px solid #3a3a4a;
+    border: 1px solid #2a241b;
 }
 
 .detail-section h4 {
     margin-top: 0;
-    color: #fff;
+    color: #fffcf5;
 }
 
 .detail-section pre {
-    background: #1a1a2a;
-    color: #00ff88;
+    background: #100e0b;
+    color: #b08a52;
     padding: 12px;
     border-radius: 6px;
     overflow-x: auto;
     font-size: 0.85rem;
-    border: 1px solid #3a3a4a;
+    border: 1px solid #2a241b;
 }
 
 .detail-section p {
-    color: #ccc;
+    color: #b5ab97;
     margin: 8px 0;
 }
 
 .detail-section strong {
-    color: #fff;
+    color: #fffcf5;
 }
 
 .text-center {
@@ -389,9 +390,9 @@ function showDetail(index) {
         </div>
         
         ${log.error ? `
-        <div class="detail-section" style="background: #3d1f1f; border-color: #5c2a2a;">
+        <div class="detail-section" style="background: rgba(201, 123, 99, 0.12); border-color: #5c2a2a;">
             <h4>❌ Error</h4>
-            <pre style="color: #ff6b6b;">${log.error}</pre>
+            <pre style="color: #e0a18c;">${log.error}</pre>
         </div>
         ` : ''}
         

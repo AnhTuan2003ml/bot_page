@@ -4,6 +4,7 @@ import requests
 
 from services.runtime_context import clear_page_context
 from utils.config_service import get_runtime_config
+from utils.message_queue import clear_queue_for_page
 from web.services.common_admin_service import (
     get_current_intent_model,
     get_current_intent_provider,
@@ -97,6 +98,7 @@ def delete_page(page_id):
         success = db_delete_page(page_id)
         if success:
             clear_page_context(page_id)
+            clear_queue_for_page(page_id)
             return {"success": True, "message": "Page deleted successfully"}, 200
         return {"success": False, "error": "Page not found"}, 404
     except Exception as exc:
@@ -121,6 +123,8 @@ def toggle_page(page_id):
                 success = db_update_page(page_id, is_active=new_status)
                 if success:
                     clear_page_context(page_id)
+                    if new_status == 0:
+                        clear_queue_for_page(page_id)
                     status_text = "enabled" if new_status == 1 else "disabled"
                     return {"success": True, "message": f"Page {status_text}", "is_active": new_status == 1}, 200
 
@@ -131,6 +135,8 @@ def toggle_page(page_id):
         success = db_update_page(page_id, is_active=new_status)
         if success:
             clear_page_context(page_id)
+            if new_status == 0:
+                clear_queue_for_page(page_id)
             status_text = "disabled" if new_status == 0 else "enabled"
             return {"success": True, "message": f"Page {status_text}", "is_active": new_status == 1}, 200
         return {"success": False, "error": "Failed to update page"}, 500
@@ -429,6 +435,144 @@ def subscribe_and_save_page(data):
             },
         }, 200
 
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}, 500
+
+
+def refresh_page_token(page_id, data):
+    """
+    Cấp lại token Page cho 1 page cụ thể - giống luồng "Thêm Page mới":
+    - Nếu token dán vào là User Access Token: đổi sang token dài hạn (gia hạn thời gian),
+      rồi lấy Page Access Token mới từ /me/accounts.
+    - Nếu token dán vào đã là Page Access Token: dùng luôn.
+    - Sau đó cập nhật DB, subscribe webhook (cho phép app) và clear cache runtime.
+    """
+    data = data or {}
+    pasted_token = str(data.get("token") or "").strip()
+    if not pasted_token:
+        return {"success": False, "error": "Vui lòng dán User Access Token (hoặc Page Access Token) của tài khoản"}, 400
+
+    from database.page_manager import get_all_pages as db_get_all_pages, update_page as db_update_page
+
+    page = None
+    for item in db_get_all_pages():
+        if str(item.get("page_id")) == str(page_id):
+            page = item
+            break
+    if not page:
+        return {"success": False, "error": "Page không tồn tại"}, 404
+
+    app_id = str(data.get("app_id", "") or page.get("app_id") or "").strip()
+    app_secret = str(data.get("app_secret", "") or page.get("app_secret") or "").strip()
+    if not app_id or not app_secret:
+        return {"success": False, "error": "Thiếu APP_ID / APP_SECRET. Hãy nhập App ID và App Secret của Page trong form này."}, 400
+
+    try:
+        # Bước 1: Exchange User token -> token dài hạn (nếu là user token)
+        long_lived_token = None
+        exchange_error = None
+        try:
+            exchange_url = "https://graph.facebook.com/v25.0/oauth/access_token"
+            params = {
+                "grant_type": "fb_exchange_token",
+                "client_id": app_id,
+                "client_secret": app_secret,
+                "fb_exchange_token": pasted_token,
+            }
+            resp1 = requests.get(exchange_url, params=params, timeout=30)
+            if resp1.status_code == 200:
+                long_lived_token = resp1.json().get("access_token")
+            else:
+                err1 = resp1.json() if resp1.text else {}
+                exchange_error = err1.get("error", {}).get("message", resp1.text)
+        except Exception as exc:
+            exchange_error = str(exc)
+
+        # Bước 2: Tìm Page token trong tài khoản (thử token dài hạn trước, rồi token dán vào)
+        candidate_tokens = [long_lived_token, pasted_token]
+        target_page = None
+        used_token = None
+        base_url = "https://graph.facebook.com/v25.0/me/accounts"
+        for cand in candidate_tokens:
+            if not cand or cand == used_token:
+                continue
+            url = base_url
+            params2 = {"access_token": cand, "limit": 100, "fields": "id,name,access_token"}
+            request_count = 0
+            while url and request_count < 20:
+                request_count += 1
+                try:
+                    resp2 = requests.get(url, params=params2 if url == base_url else {}, timeout=30)
+                except Exception:
+                    break
+                if resp2.status_code != 200:
+                    break
+                result = resp2.json()
+                for p in result.get("data", []):
+                    if str(p.get("id")) == str(page_id):
+                        target_page = p
+                        used_token = cand
+                        break
+                if target_page:
+                    break
+                url = result.get("paging", {}).get("next")
+
+        if not target_page:
+            if exchange_error and not long_lived_token:
+                return {"success": False, "error": f"Exchange token thất bại: {exchange_error}"}, 400
+            return {"success": False, "error": "Không tìm thấy Page này trong tài khoản. Hãy chắc chắn tài khoản có quyền admin của Page (hoặc token dán vào thuộc đúng Page này)."}, 400
+
+        page_access_token = target_page.get("access_token")
+        if not page_access_token:
+            return {"success": False, "error": "Không lấy được access_token của Page"}, 400
+
+        page_name = target_page.get("name") or page.get("page_name") or "Unknown"
+
+        # Bước 3: Subscribe webhook cho Page (cho phép app nhận tin nhắn)
+        subscribed = False
+        try:
+            subscribe_resp = requests.post(
+                f"https://graph.facebook.com/v25.0/{page_id}/subscribed_apps",
+                params={"access_token": page_access_token},
+                data={
+                    "subscribed_fields": "messages,messaging_postbacks,messaging_optins,"
+                    "message_deliveries,message_reads,message_echoes,message_reactions,message_edits"
+                },
+                timeout=10,
+            )
+            subscribed = subscribe_resp.json().get("success", False)
+        except Exception as sub_err:
+            print(f"[REFRESH_TOKEN] Subscribe warning for {page_id}: {sub_err}")
+
+        # Bước 4: Lưu token Page mới vào DB + clear runtime cache
+        db_update_page(
+            page_id,
+            page_access_token=page_access_token,
+            page_name=page_name,
+            app_id=app_id,
+            app_secret=app_secret,
+        )
+        clear_page_context(page_id)
+
+        # Thời hạn hết hạn token Page
+        expires_at = None
+        try:
+            dbg = requests.get(
+                "https://graph.facebook.com/v25.0/debug_token",
+                params={"input_token": page_access_token, "access_token": page_access_token},
+                timeout=15,
+            )
+            expires_at = dbg.json().get("data", {}).get("expires_at")
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "subscribed": subscribed,
+            "message": f"Đã cấp lại token Page cho '{page_name}'",
+            "expires_at": expires_at,
+            "page": {"id": page_id, "name": page_name, "page_access_token": page_access_token},
+        }, 200
     except Exception as exc:
         return {"success": False, "error": str(exc)}, 500
 

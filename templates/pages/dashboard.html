@@ -163,6 +163,17 @@
                 </div>
             </div>
             <div class="form-group">
+                <label>🔄 Cấp lại Token Page</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="text" id="edit-user-token" placeholder="Dán User Access Token của tài khoản Facebook" style="flex:1;" autocomplete="off">
+                    <button type="button" class="btn btn-primary" onclick="refreshPageToken()" id="refresh-token-btn" style="white-space:nowrap;min-width:170px;">
+                        🔄 Cấp lại Token
+                    </button>
+                </div>
+                <small>Dán User Access Token (ngắn hạn) vào rồi bấm "Cấp lại Token". Hệ thống sẽ đổi sang token dài hạn, lấy token Page mới, cập nhật và subscribe webhook tự động. Dùng App ID / App Secret trong form (nếu để trống sẽ lấy theo Page đã lưu).</small>
+                <div id="refresh-token-status"></div>
+            </div>
+            <div class="form-group">
                 <label>Kỹ năng AI</label>
                 <select id="edit-ai-skill">
                     <option value="">⏳ Đang tải...</option>
@@ -638,6 +649,10 @@ function openEditModal(pageId) {
     document.getElementById('edit-app-id').value = page.app_id || '';
     document.getElementById('edit-app-secret').value = page.app_secret || '';
     document.getElementById('edit-uid-nguoi-phu-trach').value = page.uid_nguoi_phu_trach || '';
+    const editUserToken = document.getElementById('edit-user-token');
+    if (editUserToken) editUserToken.value = '';
+    const refreshStatus = document.getElementById('refresh-token-status');
+    if (refreshStatus) refreshStatus.innerHTML = '';
     document.getElementById('edit-modal').classList.remove('hidden');
 }
 
@@ -683,6 +698,64 @@ async function updatePage() {
         }
     } catch (e) {
         showAlert('Lỗi: ' + e.message, 'error');
+    }
+}
+
+async function refreshPageToken() {
+    const pageId = document.getElementById('edit-page-id').value;
+    const token = document.getElementById('edit-user-token').value.trim();
+    const statusEl = document.getElementById('refresh-token-status');
+    const btn = document.getElementById('refresh-token-btn');
+    const appId = document.getElementById('edit-app-id').value.trim();
+    const appSecret = document.getElementById('edit-app-secret').value.trim();
+
+    if (!token) {
+        statusEl.innerHTML = '<span style="color:#ef4444">⚠️ Vui lòng dán User Access Token trước</span>';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Đang cấp lại...';
+    statusEl.innerHTML = '<span style="color:#3b82f6">🔄 Đang exchange token, lấy token Page và subscribe webhook...</span>';
+
+    try {
+        const res = await fetch(`/api/pages/${pageId}/refresh-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, app_id: appId, app_secret: appSecret })
+        });
+
+        let data;
+        try {
+            data = await res.json();
+        } catch (parseErr) {
+            const text = await res.text().catch(() => '');
+            statusEl.innerHTML = `<span style="color:#ef4444">❌ Lỗi ${res.status}: server trả về không phải JSON. ${text.slice(0, 200)}</span>`;
+            return;
+        }
+
+        if (data.success) {
+            const subMsg = data.subscribed ? ' và đã subscribe webhook' : ' (subscribe webhook thất bại)';
+            let expiryText = '';
+            if (data.expires_at) {
+                const d = new Date(data.expires_at * 1000);
+                expiryText = ` Token hết hạn: ${d.toLocaleString('vi-VN')}.`;
+            }
+            statusEl.innerHTML = `<span style="color:#22c55e">✅ ${data.message}${subMsg}!${expiryText}</span>`;
+            showAlert(`✅ ${data.message}${subMsg}!${expiryText}`);
+            document.getElementById('edit-user-token').value = '';
+            if (data.page?.page_access_token) {
+                document.getElementById('edit-page-token').value = data.page.page_access_token;
+            }
+            loadPages();
+        } else {
+            statusEl.innerHTML = `<span style="color:#ef4444">❌ ${data.error || 'Cấp lại token thất bại'}</span>`;
+        }
+    } catch (e) {
+        statusEl.innerHTML = `<span style="color:#ef4444">❌ Lỗi kết nối: ${e.message}</span>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Cấp lại Token';
     }
 }
 
@@ -792,12 +865,12 @@ async function fetchPageList() {
 
             container.innerHTML = data.pages.map((page, index) => `
                 <div onclick="selectPage(${index}, this)"
-                     style="padding:12px;margin-bottom:8px;border:2px solid #4b5563;border-radius:8px;cursor:pointer;display:flex;gap:12px;align-items:center;transition:all 0.15s;"
+                     style="padding:12px;margin-bottom:8px;border:2px solid #3d3527;border-radius:8px;cursor:pointer;display:flex;gap:12px;align-items:center;transition:all 0.15s;"
                      class="page-item">
                     <input type="radio" name="selected_page" style="margin-right:4px;transform:scale(1.2);pointer-events:none;">
                     <div style="flex:1;">
                         <strong style="font-size:15px;">${page.name}</strong><br>
-                        <small style="color:#9ca3af;">ID: ${page.id}${page.category ? ' \u2022 ' + page.category : ''}</small>
+                        <small style="color:#6b6252;">ID: ${page.id}${page.category ? ' \u2022 ' + page.category : ''}</small>
                     </div>
                 </div>
             `).join('');
@@ -815,13 +888,13 @@ async function fetchPageList() {
 // Bước 2: Chọn page từ danh sách
 function selectPage(index, element) {
     document.querySelectorAll('.page-item').forEach(el => {
-        el.style.border = '2px solid #4b5563';
+        el.style.border = '2px solid #3d3527';
         el.style.background = 'transparent';
         const radio = el.querySelector('input[type=radio]');
         if (radio) radio.checked = false;
     });
-    element.style.border = '2px solid #22c55e';
-    element.style.background = 'rgba(34, 197, 94, 0.1)';
+    element.style.border = '2px solid #8fae6e';
+    element.style.background = 'rgba(143, 174, 110, 0.12)';
     const radio = element.querySelector('input[type=radio]');
     if (radio) radio.checked = true;
 

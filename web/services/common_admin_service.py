@@ -84,6 +84,7 @@ def provider_options():
 
 def get_common_context():
     from database.page_manager import get_all_pages
+    from updater import get_current_version
 
     current_skill = get_current_skill()
     all_pages = get_all_pages()
@@ -100,6 +101,7 @@ def get_common_context():
 
     return {
         "current_skill": current_skill,
+        "current_version": get_current_version(),
         "current_provider": get_current_provider(),
         "current_intent_provider": get_current_intent_provider(),
         "current_intent_model": get_current_intent_model(),

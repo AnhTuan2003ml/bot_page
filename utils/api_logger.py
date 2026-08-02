@@ -133,13 +133,14 @@ def get_api_stats(time_range_hours=24):
     for call in calls:
         api_type = call.get("api_type", "unknown")
         stats["by_type"][api_type] = stats["by_type"].get(api_type, 0) + 1
-        status = call.get("response_status", "unknown")
-        stats["by_status"][status] = stats["by_status"].get(status, 0) + 1
+        status = call.get("response_status")
+        status_key = str(status) if status is not None else "unknown"
+        stats["by_status"][status_key] = stats["by_status"].get(status_key, 0) + 1
         duration = call.get("duration_ms")
         if duration:
             total_duration += duration
             duration_count += 1
-        if call.get("error") or (status and isinstance(status, int) and status >= 400):
+        if call.get("error") or (status is not None and isinstance(status, int) and status >= 400):
             stats["errors"] += 1
     if duration_count > 0:
         stats["avg_duration_ms"] = round(total_duration / duration_count, 2)

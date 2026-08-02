@@ -111,7 +111,18 @@ def _page_config(page):
     return build_runtime_context(page=page, page_id=get_page_id(page))
 
 
+def _is_page_active(page_id):
+    if not page_id:
+        return False
+    from services.runtime_store import runtime_store
+    return bool(runtime_store.get_page(str(page_id)))
+
+
 def _process_message_from_queue(message_data):
+    page_id = message_data.get("page_id")
+    if not _is_page_active(page_id):
+        warning(f"[QUEUE] Page {page_id or ''} đang tắt bot, bỏ qua tin nhắn trong queue")
+        return
     sender_psid = message_data["sender_psid"]
     message_text = message_data["message_text"]
     sender_name = message_data.get("sender_name")
@@ -182,6 +193,10 @@ def handle_message(sender_psid, received_message, page=None):
         debug("[WEBHOOK] handle_message skip sender is page_id")
         return
 
+    if not _is_page_active(page_id):
+        debug(f"[WEBHOOK] Page {page_id} đang tắt bot, bỏ qua tin nhắn")
+        return
+
     _ensure_queue_started()
     if not received_message.get("text"):
         return
@@ -221,11 +236,15 @@ def handle_message(sender_psid, received_message, page=None):
 
 
 def handle_postback(sender_psid, postback, page=None):
+    page_id = get_page_id(page)
+    if not _is_page_active(page_id):
+        debug(f"[WEBHOOK] Page {page_id} đang tắt bot, bỏ qua postback")
+        return
+
     _ensure_queue_started()
     payload = postback.get("payload")
     sender_name = get_sender_name(sender_psid, page)
     first_msg = is_first_message(sender_psid)
-    page_id = get_page_id(page)
     runtime_context = build_runtime_context(page=page, page_id=page_id, sender_psid=sender_psid)
 
     log_message(sender_psid, sender_name, f"[Postback: {payload}]", "received")

@@ -69,6 +69,12 @@ def api_toggle_page(page_id):
     return jsonify(result), status
 
 
+@admin_bp.route("/api/pages/<page_id>/refresh-token", methods=["POST"])
+def api_refresh_page_token(page_id):
+    result, status = page_admin_service.refresh_page_token(page_id, request.get_json(silent=True) or {})
+    return jsonify(result), status
+
+
 @admin_bp.route("/api/ai-config", methods=["GET"])
 def api_get_ai_config():
     result, status = page_admin_service.ai_config()
